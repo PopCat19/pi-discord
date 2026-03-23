@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-23
+
+- Bump `@mariozechner/pi-coding-agent` dependency from `^0.57.1` to `^0.62.0`
+
 ## [0.2.0] - 2026-03-23
 
 Post-complete message delivery and trigger file polling for companion/proactive bots.
