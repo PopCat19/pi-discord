@@ -20,7 +20,8 @@ export class RouteSessionHost {
    *   routePaths: ReturnType<import('../lib/paths.js').getRoutePaths>,
    *   journal: import('./journal.js').JournalStore,
    *   logger: import('./logger.js').Logger,
-   *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>
+   *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>,
+   *   addReaction: (emoji: string) => Promise<void>
    * }} options
    */
   constructor(options) {
@@ -31,6 +32,7 @@ export class RouteSessionHost {
     this.journal = options.journal;
     this.logger = options.logger;
     this.uploadFile = options.uploadFile;
+    this.addReaction = options.addReaction;
     this.currentSourceId = undefined;
     this.session = undefined;
     this.sessionPromise = undefined;
@@ -82,6 +84,7 @@ export class RouteSessionHost {
             excludeSourceId: this.currentSourceId,
           }),
           uploadFile: this.uploadFile,
+          addReaction: (emoji) => this.addReaction(emoji),
         }),
       ],
     });

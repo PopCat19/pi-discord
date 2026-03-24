@@ -53,10 +53,11 @@ export class PiDiscordDaemon {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
       ],
-      partials: [Partials.Channel, Partials.Message],
+      partials: [Partials.Channel, Partials.Message, Partials.Reaction],
     });
     this.routeContexts = new Map();
     this.routePromises = new Map();
@@ -237,6 +238,32 @@ export class PiDiscordDaemon {
         }
       }
     });
+
+    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
+      try {
+        if (user.bot) return;
+        if (reaction.partial) await reaction.fetch();
+        if (user.partial) await user.fetch();
+        const message = reaction.message;
+        if (!message.guildId) return;
+        const scope = this.resolveScopeFromChannel(message.guildId, message.channelId, message.channel);
+        const route = await this.getExistingRoute(scope);
+        if (!route) return;
+        const member = message.guild?.members?.cache?.get(user.id);
+        await route.journal.append({
+          kind: "reaction",
+          sourceId: `reaction-${message.id}-${user.id}-${reaction.emoji.identifier}`,
+          routeKey: route.manifest.routeKey,
+          timestamp: Date.now(),
+          emoji: reaction.emoji.name ?? reaction.emoji.toString(),
+          authorId: user.id,
+          authorName: member?.displayName ?? user.displayName ?? user.username,
+          targetMessageId: message.id,
+        });
+      } catch (error) {
+        await this.logger.error("reaction-add-failed", { error: String(error) });
+      }
+    });
   }
 
   resolveScope(guildId, channelId, threadId) {
@@ -347,6 +374,14 @@ export class PiDiscordDaemon {
       journal,
       logger: this.logger,
       uploadFile: (filePath, options) => renderer.uploadFile(filePath, options),
+      addReaction: async (emoji) => {
+        const sourceId = host.currentSourceId;
+        if (!sourceId) throw new Error("No source message to react to");
+        const channel = await renderer.getTargetChannel();
+        if (!("messages" in channel)) throw new Error("Channel does not support messages");
+        const msg = await channel.messages.fetch(sourceId);
+        await msg.react(emoji);
+      },
     });
 
     const context = { manifest, routePaths, queue, journal, renderer, host };

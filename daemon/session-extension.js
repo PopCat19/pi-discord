@@ -3,7 +3,8 @@ import { Type } from "@sinclair/typebox";
 /**
  * @param {{
  *   getInjectedContext: () => Promise<string>,
- *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>
+ *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>,
+ *   addReaction: (emoji: string) => Promise<void>
  * }} runtime
  */
 export function createRouteSessionExtension(runtime) {
@@ -40,6 +41,22 @@ export function createRouteSessionExtension(runtime) {
         return {
           content: [{ type: "text", text: `Uploaded ${params.path} to Discord.` }],
           details: result,
+        };
+      },
+    });
+
+    pi.registerTool({
+      name: "discord_react",
+      label: "React",
+      description: "Add an emoji reaction to the message you're responding to.",
+      promptSnippet: "React to messages with emoji when it feels natural.",
+      parameters: Type.Object({
+        emoji: Type.String({ description: "Emoji to react with (e.g. 🔥, 👍, 😂, or custom name:id / <:name:id>)" }),
+      }),
+      async execute(_toolCallId, params) {
+        await runtime.addReaction(params.emoji);
+        return {
+          content: [{ type: "text", text: `Reacted with ${params.emoji}` }],
         };
       },
     });

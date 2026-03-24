@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-03-23
+
+- **Emoji reactions**: ingest user reactions into recent Discord context and add a `discord_react` tool so the bot can react to the source message.
+
 ## [0.2.2] - 2026-03-24
 
 - **Conversation followups**: non-mention messages are now enqueued when they continue an active conversation. Two signals: reply to a bot message (cache check, no API call), or same user within 2 minutes of the bot's last response. Other messages remain ambient-only.

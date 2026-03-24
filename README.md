@@ -30,6 +30,8 @@ Requires a bot token and application id from the Discord Developer Portal.
 - headless Pi sessions via `createAgentSession()`
 - slash commands and @mention ingress
 - `discord_upload` tool for posting files back to Discord
+- `discord_react` tool for adding emoji reactions to messages
+- emoji reaction awareness — user reactions appear as passive context on the bot's next turn
 - throttled message updates with details-thread fallback
 - DM allowlisting and admin controls for stop/reset
 
@@ -256,6 +258,7 @@ Bot sessions are created with the Pi SDK, not with a separate custom context sto
 
 - inject route memory and bounded recent Discord context at request time
 - expose a `discord_upload` tool for explicit file egress back into Discord
+- expose a `discord_react` tool for adding emoji reactions to the triggering message
 - keep the session headless-safe by avoiding interactive UI assumptions
 
 Raw Discord text is sent through `session.prompt(..., { expandPromptTemplates: false, source: "extension" })` so normal Discord content beginning with `/` stays literal unless it came from an explicit Discord slash command.

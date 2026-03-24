@@ -48,9 +48,14 @@ export async function buildInjectedContext(input) {
   const recentMessages = input.journal
     .recent(
       MAX_CONTEXT_LINES,
-      (entry) => (entry.kind === "ambient" || entry.kind === "inbound") && entry.sourceId !== input.excludeSourceId,
+      (entry) => (entry.kind === "ambient" || entry.kind === "inbound" || entry.kind === "reaction") && entry.sourceId !== input.excludeSourceId,
     )
-    .map((entry) => `${entry.authorName ?? entry.authorId ?? "unknown"}: ${entry.text ?? ""}`)
+    .map((entry) => {
+      if (entry.kind === "reaction") {
+        return `${entry.emoji} ${entry.authorName ?? "someone"} reacted`;
+      }
+      return `${entry.authorName ?? entry.authorId ?? "unknown"}: ${entry.text ?? ""}`;
+    })
     .join("\n");
 
   const blocks = [];
