@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-03-24
+
+- **Display names**: use `displayName` instead of `username` in Requester lines and journal entries. The agent now sees "nicopreme" instead of "cartjacked." — matching what Discord shows in the UI. Falls back through server nickname → global display name → username.
+
 ## [0.2.3] - 2026-03-23
 
 - **Emoji reactions**: ingest user reactions into recent Discord context and add a `discord_react` tool so the bot can react to the source message.

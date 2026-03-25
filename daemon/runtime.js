@@ -179,7 +179,7 @@ export class PiDiscordDaemon {
           routeKey: route.manifest.routeKey,
           text: message.content ?? "",
           authorId: message.author?.id,
-          authorName: message.author?.username,
+          authorName: message.member?.displayName ?? message.author?.displayName,
         });
         const replyContext = message.reference?.messageId ? await this.fetchReplyContext(message) : undefined;
         await route.queue.replaceQueuedBySource(message.id, (item) => {
@@ -190,7 +190,7 @@ export class PiDiscordDaemon {
           item.payload.promptText = buildPromptText({
             routeKey: route.manifest.routeKey,
             scope: route.manifest.scope,
-            requester: { id: item.source.userId, name: message.author?.username ?? item.source.userId },
+            requester: { id: item.source.userId, name: message.member?.displayName ?? message.author?.displayName ?? item.source.userId },
             trigger: item.source.trigger,
             rawText,
             replyContext,
@@ -427,7 +427,7 @@ export class PiDiscordDaemon {
           timestamp: Date.now(),
           text: message.content ?? "",
           authorId: message.author.id,
-          authorName: message.author.username,
+          authorName: message.member?.displayName ?? message.author.displayName,
         });
         return;
       }
@@ -445,7 +445,7 @@ export class PiDiscordDaemon {
     const promptText = buildPromptText({
       routeKey: route.manifest.routeKey,
       scope: route.manifest.scope,
-      requester: { id: message.author.id, name: message.author.username },
+      requester: { id: message.author.id, name: message.member?.displayName ?? message.author.displayName },
       trigger,
       rawText,
       replyContext,
@@ -462,7 +462,7 @@ export class PiDiscordDaemon {
       text: rawText,
       promptText,
       authorId: message.author.id,
-      authorName: message.author.username,
+      authorName: message.member?.displayName ?? message.author.displayName,
       attachments: savedAttachments,
     });
 
@@ -580,7 +580,7 @@ export class PiDiscordDaemon {
     const promptText = buildPromptText({
       routeKey: route.manifest.routeKey,
       scope: route.manifest.scope,
-      requester: { id: interaction.user.id, name: interaction.user.username },
+      requester: { id: interaction.user.id, name: interaction.user.displayName },
       trigger: "slash-command",
       rawText,
       savedAttachments: [],
@@ -603,7 +603,7 @@ export class PiDiscordDaemon {
       text: rawText,
       promptText,
       authorId: interaction.user.id,
-      authorName: interaction.user.username,
+      authorName: interaction.user.displayName,
     });
 
     await route.queue.enqueue({
@@ -650,7 +650,7 @@ export class PiDiscordDaemon {
   async fetchReplyContext(message) {
     try {
       const replied = await message.fetchReference();
-      return `${replied.author?.username ?? "unknown"}: ${(replied.content ?? "").slice(0, 400)}`;
+      return `${replied.member?.displayName ?? replied.author?.displayName ?? "unknown"}: ${(replied.content ?? "").slice(0, 400)}`;
     } catch {
       return undefined;
     }
@@ -805,7 +805,7 @@ export class PiDiscordDaemon {
             timestamp: message.createdTimestamp,
             text: message.content ?? "",
             authorId: message.author?.id,
-            authorName: message.author?.username,
+            authorName: message.member?.displayName ?? message.author?.displayName,
           });
         }
       } catch (error) {
