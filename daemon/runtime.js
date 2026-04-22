@@ -2,6 +2,7 @@ import path from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import {
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -163,7 +164,7 @@ export class PiDiscordDaemon {
         if (message.guildId && this.config.allowedGuildIds.length > 0 && !this.config.allowedGuildIds.includes(message.guildId)) {
           return;
         }
-        if (!authorizeInteraction(message, this.config).allowed) return;
+        if (!authorizeInteraction(message, this.config, message.channel).allowed) return;
 
         const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
         const route = await this.getExistingRoute(scope);
@@ -382,6 +383,20 @@ export class PiDiscordDaemon {
         const msg = await channel.messages.fetch(sourceId);
         await msg.react(emoji);
       },
+      createThread: async (name, options) => {
+        const channel = await renderer.getTargetChannel();
+        if (channel.type !== ChannelType.GuildText) {
+          throw new Error("Can only create threads in text channels");
+        }
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const threadName = name.includes(dateStr) ? name : `${dateStr}-${name}`;
+        const thread = await channel.threads.create({ name: threadName, autoArchiveDuration: 60 });
+        if (options?.message) await thread.send({ content: options.message, allowedMentions: { parse: [] } });
+        return { threadId: thread.id, threadUrl: `https://discord.com/channels/${manifest.scope.guildId}/${thread.id}` };
+      },
+      persistManifest: async () => {
+        await this.registry.saveManifest(manifest);
+      },
     });
 
     const context = { manifest, routePaths, queue, journal, renderer, host };
@@ -410,10 +425,11 @@ export class PiDiscordDaemon {
 
   async handleMessageCreate(message) {
     if (!this.client.user || message.author?.bot) return;
-    const authorization = authorizeInteraction(message, this.config);
+    const authorization = authorizeInteraction(message, this.config, message.channel);
     if (!authorization.allowed) return;
 
     const botMentioned = message.mentions.users.has(this.client.user.id);
+    const isGroupDm = message.channel?.type === ChannelType.GroupDM;
     const isDm = !message.guildId;
     if (!botMentioned && !isDm) {
       const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
@@ -441,7 +457,7 @@ export class PiDiscordDaemon {
     const savedAttachments = await this.saveInboundAttachments(route, message.attachments.values(), message.id);
     const replyContext = message.reference?.messageId ? await this.fetchReplyContext(message) : undefined;
     const rawText = botMentioned ? stripBotMention(message.content ?? "", this.client.user.id) : (message.content ?? "");
-    const trigger = isDm ? "dm" : botMentioned ? "mention" : "followup";
+    const trigger = isGroupDm ? "group-dm" : isDm ? "dm" : botMentioned ? "mention" : "followup";
     const promptText = buildPromptText({
       routeKey: route.manifest.routeKey,
       scope: route.manifest.scope,
@@ -491,7 +507,7 @@ export class PiDiscordDaemon {
       if (namespace !== "pi-discord" || action !== "stop" || !routeKey) {
         return;
       }
-      const authorization = authorizeInteraction(interaction, this.config);
+      const authorization = authorizeInteraction(interaction, this.config, interaction.channel);
       if (!authorization.allowed) {
         await interaction.reply({ content: authorization.reason ?? "Not allowed.", ephemeral: true });
         return;
@@ -511,7 +527,7 @@ export class PiDiscordDaemon {
     if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName !== this.config.commandName) return;
 
-    const authorization = authorizeInteraction(interaction, this.config);
+    const authorization = authorizeInteraction(interaction, this.config, interaction.channel);
     if (!authorization.allowed) {
       if (interaction.isRepliable()) {
         const responder = interaction.deferred || interaction.replied ? interaction.followUp.bind(interaction) : interaction.reply.bind(interaction);
@@ -796,7 +812,7 @@ export class PiDiscordDaemon {
         const recent = await channel.messages.fetch({ limit: 15 });
         for (const message of [...recent.values()].reverse()) {
           if (message.author?.bot) continue;
-          if (!authorizeInteraction(message, this.config).allowed) continue;
+          if (!authorizeInteraction(message, this.config, channel).allowed) continue;
           if (route.journal.hasSource(message.id)) continue;
           await route.journal.append({
             kind: "ambient",

@@ -21,7 +21,9 @@ export class RouteSessionHost {
    *   journal: import('./journal.js').JournalStore,
    *   logger: import('./logger.js').Logger,
    *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>,
-   *   addReaction: (emoji: string) => Promise<void>
+   *   addReaction: (emoji: string) => Promise<void>,
+   *   createThread: (name: string, options?: { message?: string }) => Promise<{ threadId: string, threadUrl: string }>,
+   *   persistManifest: () => Promise<void>
    * }} options
    */
   constructor(options) {
@@ -33,6 +35,8 @@ export class RouteSessionHost {
     this.logger = options.logger;
     this.uploadFile = options.uploadFile;
     this.addReaction = options.addReaction;
+    this.createThread = options.createThread;
+    this.persistManifest = options.persistManifest;
     this.currentSourceId = undefined;
     this.session = undefined;
     this.sessionPromise = undefined;
@@ -69,6 +73,13 @@ export class RouteSessionHost {
       images: { blockImages: !this.config.enableImageInput },
     });
 
+    // Resolve agent-specific settings
+    const agentName = this.manifest.currentAgent ?? this.config.defaultAgent;
+    const agent = agentName && this.config.agents?.[agentName];
+    const systemPrompt = agent?.systemPrompt ?? this.config.systemPrompt;
+    const agentModel = agent?.defaultModel ?? this.config.defaultModel;
+    const agentThinkingLevel = agent?.defaultThinkingLevel ?? this.config.defaultThinkingLevel;
+
     const resourceLoader = new DefaultResourceLoader({
       cwd: this.manifest.executionRoot,
       agentDir: this.agentDir,
@@ -76,6 +87,7 @@ export class RouteSessionHost {
       noExtensions: !this.config.allowProjectExtensions,
       noPromptTemplates: true,
       noThemes: true,
+      systemPrompt,
       extensionFactories: [
         createRouteSessionExtension({
           getInjectedContext: () => buildInjectedContext({
@@ -85,6 +97,8 @@ export class RouteSessionHost {
           }),
           uploadFile: this.uploadFile,
           addReaction: (emoji) => this.addReaction(emoji),
+          createThread: (name, opts) => this.createThread(name, opts),
+          setAgent: (agentName) => this.setAgent(agentName),
         }),
       ],
     });
@@ -95,8 +109,8 @@ export class RouteSessionHost {
       : SessionManager.create(this.manifest.executionRoot, this.routePaths.sessionsDir);
 
     let model;
-    if (this.config.defaultModel) {
-      const [provider, ...rest] = this.config.defaultModel.split("/");
+    if (agentModel) {
+      const [provider, ...rest] = agentModel.split("/");
       if (provider && rest.length > 0) {
         model = modelRegistry.find(provider, rest.join("/"));
       }
@@ -111,7 +125,7 @@ export class RouteSessionHost {
       settingsManager,
       resourceLoader,
       model,
-      thinkingLevel: this.config.defaultThinkingLevel,
+      thinkingLevel: agentThinkingLevel,
     });
 
     await session.bindExtensions({
@@ -130,6 +144,16 @@ export class RouteSessionHost {
     });
 
     return session;
+  }
+
+  async setAgent(agentName) {
+    if (!this.config.agents?.[agentName]) {
+      throw new Error(`Unknown agent: ${agentName}. Available agents: ${Object.keys(this.config.agents || {}).join(', ') || 'none'}`);
+    }
+    this.manifest.currentAgent = agentName;
+    if (this.persistManifest) await this.persistManifest();
+    await this.dispose();
+    return { agent: agentName };
   }
 
   async dispose() {

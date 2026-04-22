@@ -13,6 +13,7 @@ import { getRoutePaths } from "../lib/paths.js";
  * @property {string | undefined} sessionFile
  * @property {string | undefined} primaryMessageId
  * @property {string | undefined} detailsThreadId
+ * @property {string | undefined} currentAgent
  */
 
 function normalizeScope(value) {
@@ -64,6 +65,7 @@ function normalizeManifest(routeKey, value) {
     sessionFile: typeof value.sessionFile === "string" ? value.sessionFile : undefined,
     primaryMessageId: typeof value.primaryMessageId === "string" ? value.primaryMessageId : undefined,
     detailsThreadId: typeof value.detailsThreadId === "string" ? value.detailsThreadId : undefined,
+    currentAgent: typeof value.currentAgent === "string" ? value.currentAgent : undefined,
   };
 }
 
@@ -128,5 +130,6 @@ export function createRouteManifest(input) {
     sessionFile: undefined,
     primaryMessageId: undefined,
     detailsThreadId: undefined,
+    currentAgent: undefined,
   };
 }
