@@ -174,6 +174,7 @@ Current fields:
 - `allowedGuildIds`: optional guild allowlist. Empty means any guild the bot joins is accepted
 - `adminUserIds`: Discord user ids allowed to stop active runs and reset routes
 - `dmAllowlistUserIds`: Discord user ids allowed to use the bot in DMs
+- `groupDmAllowlistUserIds`: Discord user ids allowed to use the bot in group DMs
 - `commandName`: slash-command root. Defaults to `pi`, which creates `/pi ask`, `/pi status`, `/pi stop`, and `/pi reset`
 - `registerCommandsGlobally`: if `true`, registers commands globally instead of guild-scoped
 - `syncCommandsOnStart`: if `true`, `/discord start` syncs slash commands before starting the daemon
@@ -188,6 +189,47 @@ Current fields:
 - `primaryFlushMs`: cadence for throttled primary-message edits while the assistant is streaming
 - `defaultModel`: optional `provider/model-id` for new routes
 - `defaultThinkingLevel`: Pi thinking level for new routes
+- `systemPrompt`: optional system prompt override for routes without a specified agent
+- `agents`: map of agent name to agent definition (see Agent System below)
+- `defaultAgent`: name of the default agent to use. Defaults to `"default"`
+
+## Agent system
+
+Multiple agents can be defined in config, each with their own system prompt, model, and thinking level. This enables switching personalities or capabilities mid-route.
+
+**Agent config structure:**
+
+```json
+{
+  "agents": {
+    "assistant": {
+      "systemPrompt": "You are a helpful assistant.",
+      "defaultModel": "openai/gpt-4o",
+      "defaultThinkingLevel": "medium"
+    },
+    "code-reviewer": {
+      "systemPrompt": "You are a strict code reviewer. Be concise and thorough.",
+      "defaultModel": "anthropic/claude-sonnet-4",
+      "defaultThinkingLevel": "high"
+    }
+  },
+  "defaultAgent": "assistant"
+}
+```
+
+**Agent fields:**
+
+- `systemPrompt` (required): The system prompt for that agent
+- `defaultModel` (optional): Model override for this agent
+- `defaultThinkingLevel` (optional): Thinking level for this agent
+
+**Switching agents:**
+
+The bot session exposes a `setAgent` tool that allows switching agents during a conversation. The current agent is persisted in the route manifest and survives restarts.
+
+**Fallback behavior:**
+
+If no agent is specified or `defaultAgent` is not configured, routes use the top-level `systemPrompt` and `defaultModel` from config for backward compatibility.
 
 ## Discord commands and triggers
 
@@ -198,7 +240,7 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/pi stop`
 - `/pi reset`
 
-In addition, a direct mention in a guild channel or a DM from an allowlisted user will enqueue work for the current route.
+In addition, a direct mention in a guild channel, a DM from an allowlisted user, or a group DM from an allowlisted user will enqueue work for the current route.
 
 Once a route already exists, ordinary non-mention guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
 
@@ -300,6 +342,10 @@ which reports whether the daemon is running, its pid, known route count, and cur
 **Route registry**: A central registry tracks known routes by their Discord identity (guild/channel/thread). Each route maintains its own manifest with pointers to the current session file, primary message id, and details thread id.
 
 **Restart recovery**: On startup, the daemon iterates known routes, recovers any expired queue leases, and backfills recent channel messages into the journal as ambient context. This means the bot can pick up where it left off even after an unexpected exit.
+
+**Thread creation**: Bot sessions can create Discord threads via the `createThread` tool. This allows the agent to spin off dedicated discussion threads for complex topics or tool output. Threads are named with a date prefix by default.
+
+**Manifest persistence**: Route manifests are persisted after agent switches to preserve the current agent across daemon restarts.
 
 **Detached daemon**: The Discord gateway connection runs in a separate long-lived process (`pi-discord-daemon`) rather than inside Pi's runtime. This lets the bot stay online independently of any interactive Pi session.
 
