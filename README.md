@@ -174,7 +174,6 @@ Current fields:
 - `allowedGuildIds`: optional guild allowlist. Empty means any guild the bot joins is accepted
 - `adminUserIds`: Discord user ids allowed to stop active runs and reset routes
 - `dmAllowlistUserIds`: Discord user ids allowed to use the bot in DMs
-- `groupDmAllowlistUserIds`: Discord user ids allowed to use the bot in group DMs
 - `commandName`: slash-command root. Defaults to `pi`, which creates `/pi ask`, `/pi status`, `/pi stop`, and `/pi reset`
 - `registerCommandsGlobally`: if `true`, registers commands globally instead of guild-scoped
 - `syncCommandsOnStart`: if `true`, `/discord start` syncs slash commands before starting the daemon
@@ -240,7 +239,7 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/pi stop`
 - `/pi reset`
 
-In addition, a direct mention in a guild channel, a DM from an allowlisted user, or a group DM from an allowlisted user will enqueue work for the current route.
+In addition, a direct mention in a guild channel or a DM from an allowlisted user will enqueue work for the current route.
 
 Once a route already exists, ordinary non-mention guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
 

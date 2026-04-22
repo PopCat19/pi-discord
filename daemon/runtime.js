@@ -429,7 +429,6 @@ export class PiDiscordDaemon {
     if (!authorization.allowed) return;
 
     const botMentioned = message.mentions.users.has(this.client.user.id);
-    const isGroupDm = message.channel?.type === ChannelType.GroupDM;
     const isDm = !message.guildId;
     if (!botMentioned && !isDm) {
       const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
@@ -457,7 +456,7 @@ export class PiDiscordDaemon {
     const savedAttachments = await this.saveInboundAttachments(route, message.attachments.values(), message.id);
     const replyContext = message.reference?.messageId ? await this.fetchReplyContext(message) : undefined;
     const rawText = botMentioned ? stripBotMention(message.content ?? "", this.client.user.id) : (message.content ?? "");
-    const trigger = isGroupDm ? "group-dm" : isDm ? "dm" : botMentioned ? "mention" : "followup";
+    const trigger = isDm ? "dm" : botMentioned ? "mention" : "followup";
     const promptText = buildPromptText({
       routeKey: route.manifest.routeKey,
       scope: route.manifest.scope,
