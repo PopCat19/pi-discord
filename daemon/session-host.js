@@ -76,7 +76,13 @@ export class RouteSessionHost {
     // Resolve agent-specific settings
     const agentName = this.manifest.currentAgent ?? this.config.defaultAgent;
     const agent = agentName && this.config.agents?.[agentName];
-    const systemPrompt = agent?.systemPrompt ?? this.config.systemPrompt;
+    
+    // Skip default persona if useThreadPersona is enabled
+    // This allows the thread history to define the persona for Pi tasks
+    const systemPrompt = this.config.useThreadPersona
+      ? undefined
+      : (agent?.systemPrompt ?? this.config.systemPrompt);
+    
     const agentModel = agent?.defaultModel ?? this.config.defaultModel;
     const agentThinkingLevel = agent?.defaultThinkingLevel ?? this.config.defaultThinkingLevel;
 

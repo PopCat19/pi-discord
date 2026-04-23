@@ -195,6 +195,7 @@ Current fields:
 - `defaultModel`: optional `provider/model-id` for new routes
 - `defaultThinkingLevel`: Pi thinking level for new routes
 - `systemPrompt`: optional system prompt override for routes without a specified agent
+- `useThreadPersona`: if `true`, discard default Pi persona and let thread history define the persona for Pi tasks (git status, etc.)
 - `agents`: map of agent name to agent definition (see Agent System below)
 - `defaultAgent`: name of the default agent to use. Defaults to `"default"`
 
