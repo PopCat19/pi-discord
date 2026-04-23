@@ -7,7 +7,7 @@ import { ensureDir, readJson, writeJson } from "../lib/fs.js";
  * @property {string} id
  * @property {"queued" | "leased" | "running" | "completed" | "failed" | "cancelled"} state
  * @property {string | undefined} error
- * @property {{ kind: "message" | "interaction", sourceId: string, userId: string, guildId: string | null, channelId: string, threadId: string | null, trigger: string }} source
+ * @property {{ kind: "message" | "interaction", sourceId: string, userId: string, guildId: string | null, channelId: string, threadId: string | null, trigger: string, isAdmin?: boolean }} source
  * @property {{ rawText: string, promptText: string, attachments: Array<{ path: string, name: string, contentType?: string, isImage: boolean }> }} payload
  * @property {{ workerId: string, acquiredAt: number, expiresAt: number } | undefined} lease
  */
@@ -42,6 +42,7 @@ function normalizeSource(value) {
     channelId: value.channelId,
     threadId: typeof value.threadId === "string" ? value.threadId : null,
     trigger: value.trigger,
+    isAdmin: typeof value.isAdmin === "boolean" ? value.isAdmin : false,
   };
 }
 
