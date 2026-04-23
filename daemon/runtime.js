@@ -419,7 +419,7 @@ export class PiDiscordDaemon {
     const entries = route.journal.entries;
     const lastResponse = entries.findLast((e) => e.kind === "assistant-final" || e.kind === "trigger-sent");
     if (!lastResponse || Date.now() - lastResponse.timestamp > 2 * 60 * 1000) return false;
-    const lastInbound = entries.findLast((e) => e.kind === "inbound");
+    const lastInbound = entries.findLast((e) => e.kind === "inbound" || e.kind === "interaction");
     return lastInbound?.authorId === message.author.id;
   }
 
