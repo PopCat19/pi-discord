@@ -490,6 +490,7 @@ export class PiDiscordDaemon {
         channelId: scope.channelId,
         threadId: scope.threadId,
         trigger,
+        isAdmin: authorization.canControl,
       },
       payload: {
         rawText,
@@ -737,6 +738,22 @@ export class PiDiscordDaemon {
               .map((attachment) => toImageContent(attachment.path, attachment.contentType)),
           )
         : [];
+
+      // Apply tool permissions
+      const isAdmin = leasedItem.source.isAdmin ?? false;
+      const toolPermissions = this.config.toolPermissions ?? { adminOnly: ["bash", "edit", "write"], disabled: [] };
+      const allTools = session.getActiveToolNames();
+      const adminOnly = toolPermissions.adminOnly ?? [];
+      const disabled = toolPermissions.disabled ?? [];
+      const allowedTools = allTools.filter((name) => {
+        if (disabled.includes(name)) return false;
+        if (adminOnly.includes(name) && !isAdmin) return false;
+        return true;
+      });
+      if (allowedTools.length !== allTools.length) {
+        session.setActiveToolsByName(allowedTools);
+      }
+
       await session.prompt(leasedItem.payload.promptText, {
         expandPromptTemplates: false,
         source: "extension",
