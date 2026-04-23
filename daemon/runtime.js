@@ -428,7 +428,11 @@ export class PiDiscordDaemon {
     const authorization = authorizeInteraction(message, this.config, message.channel);
     if (!authorization.allowed) return;
 
-    const botMentioned = message.mentions.users.has(this.client.user.id);
+    const botMentioned = message.mentions.users.has(this.client.user.id)
+      || (message.guildId && message.mentions.roles.some((role) => {
+        const botMember = message.guild?.members?.me;
+        return botMember?.roles?.cache?.has(role.id);
+      }));
     const isDm = !message.guildId;
     if (!botMentioned && !isDm) {
       const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
