@@ -38,6 +38,12 @@ Requires a bot token and application id from the Discord Developer Portal.
 ## Install
 
 ```bash
+pi install git:github.com/PopCat19/pi-discord
+```
+
+Or the upstream:
+
+```bash
 pi install npm:pi-discord
 ```
 
