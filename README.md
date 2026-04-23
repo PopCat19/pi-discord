@@ -73,6 +73,12 @@ or a direct mention:
 @your-bot inspect the latest error screenshot
 ```
 
+Role mentions also work:
+
+```text
+@AdminRole check the logs
+```
+
 To stop the helper process:
 
 ```text
@@ -249,9 +255,9 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/pi stop`
 - `/pi reset`
 
-In addition, a direct mention (user or role) in a guild channel or a DM from an allowlisted user will enqueue work for the current route.
+In addition, a direct mention (user or role) in a guild channel or a DM from an allowlisted user will enqueue work for the current route. Role mentions require the bot to have the role assigned; the bot checks `message.mentions.roles` for roles it possesses.
 
-Once a route already exists, follow-up messages from users who recently interacted with the bot are also enqueued. Other guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
+Once a route already exists, follow-up messages from users who recently interacted with the bot (including via slash commands) are also enqueued. Other guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
 
 ## Pi operator commands
 
@@ -376,6 +382,10 @@ Non-admin users in allowlisted guilds can use the bot but cannot execute admin-r
 > Tool 'bash' is restricted to server admins only. Ask a server admin to perform this action.
 
 This prevents RCE from arbitrary guild members.
+
+**Role mentions**: Role mentions trigger bot responses when the bot has that role assigned. The bot checks `message.mentions.roles` for roles it possesses, enabling team-based access patterns (e.g., `@AdminRole check the logs`).
+
+**Followup detection**: After slash commands or mentions, the bot creates a context window where followup messages from the same user are automatically enqueued, enabling natural conversation flow without repeated mentions.
 
 Project extensions are off by default in bot sessions because many extensions assume an interactive TUI and human supervision.
 

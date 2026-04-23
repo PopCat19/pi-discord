@@ -1,4 +1,5 @@
 import { Type } from "@sinclair/typebox";
+import { appendFileSync } from "node:fs";
 
 /**
  * @param {{
@@ -20,14 +21,14 @@ export function createRouteSessionExtension(runtime) {
       
       if (disabled.includes(event.toolName)) {
         return {
-          content: [{ type: "text", text: `Tool '${event.toolName}' is disabled and cannot be used.` }],
-          isError: true,
+          block: true,
+          reason: `Tool '${event.toolName}' is disabled and cannot be used.`,
         };
       }
       if (adminOnly.includes(event.toolName) && !isAdmin) {
         return {
-          content: [{ type: "text", text: `Tool '${event.toolName}' is restricted to server admins only. Ask a server admin to perform this action.` }],
-          isError: true,
+          block: true,
+          reason: `Tool '${event.toolName}' is restricted to server admins only. Ask a server admin to perform this action.`,
         };
       }
       // Return undefined to let the tool execute normally

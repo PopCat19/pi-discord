@@ -635,6 +635,7 @@ export class PiDiscordDaemon {
         channelId: scope.channelId,
         threadId: scope.threadId,
         trigger: "slash-command",
+        isAdmin: authorization.canControl,
       },
       payload: {
         rawText,
