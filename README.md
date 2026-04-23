@@ -249,9 +249,9 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/pi stop`
 - `/pi reset`
 
-In addition, a direct mention in a guild channel or a DM from an allowlisted user will enqueue work for the current route.
+In addition, a direct mention (user or role) in a guild channel or a DM from an allowlisted user will enqueue work for the current route.
 
-Once a route already exists, ordinary non-mention guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
+Once a route already exists, follow-up messages from users who recently interacted with the bot are also enqueued. Other guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
 
 ## Pi operator commands
 
@@ -371,7 +371,11 @@ Stop and reset controls are restricted to ids listed in `adminUserIds`.
 - `toolPermissions.adminOnly`: Tools only usable by admins (default: `bash`, `edit`, `write`)
 - `toolPermissions.disabled`: Tools disabled for all users
 
-Non-admin users in allowlisted guilds can use the bot but cannot execute admin-restricted tools. This prevents RCE from arbitrary guild members.
+Non-admin users in allowlisted guilds can use the bot but cannot execute admin-restricted tools. When they attempt to use one, they receive a clear message:
+
+> Tool 'bash' is restricted to server admins only. Ask a server admin to perform this action.
+
+This prevents RCE from arbitrary guild members.
 
 Project extensions are off by default in bot sessions because many extensions assume an interactive TUI and human supervision.
 
