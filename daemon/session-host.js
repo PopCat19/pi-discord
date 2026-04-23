@@ -40,6 +40,9 @@ export class RouteSessionHost {
     this.currentSourceId = undefined;
     this.session = undefined;
     this.sessionPromise = undefined;
+    // Dynamic permission state, updated per-request
+    this.currentIsAdmin = false;
+    this.currentToolPermissions = { adminOnly: ["bash", "edit", "write"], disabled: [] };
   }
 
   async ensureSession() {
@@ -105,6 +108,8 @@ export class RouteSessionHost {
           addReaction: (emoji) => this.addReaction(emoji),
           createThread: (name, opts) => this.createThread(name, opts),
           setAgent: (agentName) => this.setAgent(agentName),
+          getIsAdmin: () => this.currentIsAdmin,
+          getToolPermissions: () => this.currentToolPermissions,
         }),
       ],
     });

@@ -743,15 +743,19 @@ export class PiDiscordDaemon {
           )
         : [];
 
-      // Apply tool permissions
+      // Set permissions for this request
       const isAdmin = leasedItem.source.isAdmin ?? false;
       const toolPermissions = this.config.toolPermissions ?? { adminOnly: ["bash", "edit", "write"], disabled: [] };
+      route.host.currentIsAdmin = isAdmin;
+      route.host.currentToolPermissions = toolPermissions;
+
+      // Apply tool permissions (disable/remove tools)
       const allTools = session.getActiveToolNames();
       const adminOnly = toolPermissions.adminOnly ?? [];
       const disabled = toolPermissions.disabled ?? [];
       const allowedTools = allTools.filter((name) => {
         if (disabled.includes(name)) return false;
-        if (adminOnly.includes(name) && !isAdmin) return false;
+        // Admin-only tools are kept but will return permission error on execution
         return true;
       });
       if (allowedTools.length !== allTools.length) {

@@ -4,11 +4,36 @@ import { Type } from "@sinclair/typebox";
  * @param {{
  *   getInjectedContext: () => Promise<string>,
  *   uploadFile: (filePath: string, options?: { title?: string }) => Promise<{ messageId: string, url?: string }>,
- *   addReaction: (emoji: string) => Promise<void>
+ *   addReaction: (emoji: string) => Promise<void>,
+ *   getIsAdmin: () => boolean,
+ *   getToolPermissions: () => { adminOnly: string[], disabled: string[] }
  * }} runtime
  */
 export function createRouteSessionExtension(runtime) {
   return (pi) => {
+    // Intercept tool calls to enforce permissions
+    pi.on("tool_call", async (event) => {
+      const toolPermissions = runtime.getToolPermissions?.() ?? { adminOnly: ["bash", "edit", "write"], disabled: [] };
+      const adminOnly = toolPermissions.adminOnly ?? [];
+      const disabled = toolPermissions.disabled ?? [];
+      const isAdmin = runtime.getIsAdmin?.() ?? false;
+      
+      if (disabled.includes(event.toolName)) {
+        return {
+          content: [{ type: "text", text: `Tool '${event.toolName}' is disabled and cannot be used.` }],
+          isError: true,
+        };
+      }
+      if (adminOnly.includes(event.toolName) && !isAdmin) {
+        return {
+          content: [{ type: "text", text: `Tool '${event.toolName}' is restricted to server admins only. Ask a server admin to perform this action.` }],
+          isError: true,
+        };
+      }
+      // Return undefined to let the tool execute normally
+      return undefined;
+    });
+
     pi.on("context", async (event) => {
       const injectedText = await runtime.getInjectedContext();
       if (!injectedText.trim()) return undefined;
