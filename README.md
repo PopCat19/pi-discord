@@ -196,6 +196,9 @@ Current fields:
 - `defaultThinkingLevel`: Pi thinking level for new routes
 - `systemPrompt`: optional system prompt override for routes without a specified agent
 - `useThreadPersona`: if `true`, discard default Pi persona and let thread history define the persona for Pi tasks (git status, etc.)
+- `toolPermissions`: tool access control configuration
+  - `adminOnly`: array of tool names restricted to admin users (default: `["bash", "edit", "write"]`)
+  - `disabled`: array of tool names disabled for all users (default: `[]`)
 - `agents`: map of agent name to agent definition (see Agent System below)
 - `defaultAgent`: name of the default agent to use. Defaults to `"default"`
 
@@ -362,6 +365,13 @@ A few constraints are deliberate.
 DMs are deny-by-default and only open to ids listed in `dmAllowlistUserIds`.
 
 Stop and reset controls are restricted to ids listed in `adminUserIds`.
+
+**Tool permissions** restrict dangerous operations:
+
+- `toolPermissions.adminOnly`: Tools only usable by admins (default: `bash`, `edit`, `write`)
+- `toolPermissions.disabled`: Tools disabled for all users
+
+Non-admin users in allowlisted guilds can use the bot but cannot execute admin-restricted tools. This prevents RCE from arbitrary guild members.
 
 Project extensions are off by default in bot sessions because many extensions assume an interactive TUI and human supervision.
 
