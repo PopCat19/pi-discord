@@ -1,22 +1,22 @@
 {
-  "name": "pi-discord",
-  "private": false,
-  "version": "0.2.5",
-  "type": "module",
-  "bin": {
-    "pi-discord-daemon": "./bin/pi-discord-daemon.mjs"
-  },
-  "scripts": {
-    "test": "node --test"
-  },
-  "pi": {
-    "extensions": [
-      "./index.js"
-    ]
-  },
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.65.0",
-    "@sinclair/typebox": "^0.34.41",
-    "discord.js": "^14.25.1"
-  }
+	"name": "pi-discord",
+	"private": false,
+	"version": "0.2.5",
+	"type": "module",
+	"bin": {
+		"pi-discord-daemon": "./bin/pi-discord-daemon.mjs"
+	},
+	"scripts": {
+		"test": "node --test"
+	},
+	"pi": {
+		"extensions": [
+			"./index.js"
+		]
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.65.0",
+		"@sinclair/typebox": "^0.34.41",
+		"discord.js": "^14.25.1"
+	}
 }
