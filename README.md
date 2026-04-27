@@ -6,6 +6,17 @@
 
 A Discord bot that brings Pi into your server. Mention the bot or use slash commands to run Pi with full tool access, persistent sessions, and optional project extensions.
 
+> **⚠️ Experimental: Multi-instance support**
+> 
+> The `pi-discord` CLI now supports multiple bot instances. This is a new feature.
+> Legacy installations at `~/.pi/agent/pi-discord/` continue to work but can be migrated:
+> 
+> ```
+> pi-discord migrate my-bot-name
+> ```
+> 
+> New instances are stored in `~/.pi/agent/pi-discord-instances/`.
+
 **How it works:** A detached daemon listens for Discord mentions, DMs, and slash commands. Each channel gets its own persistent Pi session, so follow-up questions remember earlier conversation. When a message comes in, the daemon calls `session.prompt()`, subscribes to the response stream, and live-updates the Discord reply as text streams back. Operator runs `/discord start|stop|status` from Pi to control it.
 
 Requires a bot token and application id from the Discord Developer Portal.
@@ -48,6 +59,50 @@ pi install npm:pi-discord
 ```
 
 Then restart Pi so it discovers the extension.
+
+## Multi-instance CLI
+
+> **Experimental** - New feature, see notice above.
+
+The `pi-discord` CLI manages multiple bot instances:
+
+```
+pi-discord create <name> [--needed]  Create new instance
+pi-discord list                 List all instances
+pi-discord start <name>        Start an instance
+pi-discord stop <name>         Stop an instance
+pi-discord restart <name>      Restart an instance
+pi-discord status [name]       Show instance status
+pi-discord edit <name>         Open config in $EDITOR
+pi-discord remove <name>       Delete an instance
+pi-discord migrate <name>      Migrate legacy instance
+```
+
+**Instance storage:**
+- New instances: `~/.pi/agent/pi-discord-instances/<name>/workspace/`
+- Legacy: `~/.pi/agent/pi-discord/` (detected automatically)
+
+**Creating a new bot:**
+
+1. Create Discord application at https://discord.com/developers/applications
+2. Copy bot token and application ID
+3. `pi-discord create my-bot`
+4. `pi-discord edit my-bot` — paste credentials
+5. Add `systemPromptFile: "system-prompt.md"` to config and create the file
+6. `pi-discord start my-bot`
+
+**Migrating from legacy:**
+
+```bash
+# Stop legacy first
+pi-discord stop legacy
+
+# Migrate to named instance
+pi-discord migrate my-bot
+
+# Verify, then remove legacy
+rm -rf ~/.pi/agent/pi-discord
+```
 
 ## Quick start
 
@@ -151,7 +206,19 @@ After the bot is in the server, collect the guild ids you want to allow. In Disc
 
 ## Pi-side setup flow
 
-The easiest path is:
+### Using the CLI (recommended)
+
+```bash
+# Create and configure a new bot instance
+pi-discord create my-bot
+pi-discord edit my-bot
+# Add botToken and applicationId to config
+pi-discord start my-bot
+```
+
+### Using Pi commands (legacy)
+
+Inside Pi:
 
 ```text
 /discord setup
@@ -276,9 +343,11 @@ Inside Pi, the extension exposes:
 
 The package code stays in the extension directory. Mutable runtime state lives separately under:
 
-`~/.pi/agent/pi-discord`
+**New instances:** `~/.pi/agent/pi-discord-instances/<name>/workspace/`
 
-That workspace contains:
+**Legacy:** `~/.pi/agent/pi-discord/`
+
+Each workspace contains:
 
 - `config.json`
 - `logs/daemon.log`
