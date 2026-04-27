@@ -97,6 +97,7 @@ pi-discord migrate <name>      Migrate legacy instance
 pi-discord sync-commands <name> Sync slash commands
 pi-discord trigger <name> <scene> Trigger a scene manually
 pi-discord routes <name> [days] List/wipe stale routes
+pi-discord halt <name>         Stop all runs and clear queue (admin)
 ```
 
 **Instance storage:**
@@ -303,6 +304,7 @@ Current fields:
   - `onStartup`: if `true`, run cleanup on bot start (default: true)
 - `presence`: presence manager config for scheduled status changes
 - `botFollowup`: config for bot-to-bot followup messages
+- `processOfflineMentions`: if `true`, bot processes the most recent missed mention on startup (default: true)
 
 ## Agent system
 
@@ -351,7 +353,8 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/<command> stop` - Stop the active route run
 - `/<command> reset` - Reset the current route session
 - `/<command> wipe` - Full wipe: session + journal + memory
-- `/<command> regen` - Regenerate the last bot response
+- `/<command> regen` - Regenerate the last bot response (or generate for missed mention)
+- `/<command> halt` - Stop all running/queued items (admin only)
 - `/<command> routes [wipe]` - List routes or wipe stale ones (admin only)
 
 In addition, a direct mention (user or role) in a guild channel or a DM from an allowlisted user will enqueue work for the current route. Role mentions require the bot to have the role assigned; the bot checks `message.mentions.roles` for roles it possesses.
