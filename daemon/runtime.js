@@ -1264,7 +1264,12 @@ export class PiDiscordDaemon {
 			logger: this.logger,
 			instanceName,
 			presenceManager: this.presenceManager,
-		});;
+		});
+		
+		// Wire orchestrator's day refresh to presence manager
+		if (this.presenceManager) {
+			this.presenceManager.onDayRefresh = () => this.orchestrator.onDayRefresh();
+		}
 
 		await this.orchestrator.start();
 		await this.logger.info("orchestrator-initialized", {

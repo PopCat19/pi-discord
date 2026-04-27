@@ -75,6 +75,23 @@ export class PresenceManager {
 	}
 
 	/**
+	 * Set base schedule (called by orchestrator).
+	 * @param {PresenceMarker[]} schedule
+	 */
+	async setBase(schedule) {
+		this.state.schedule = schedule;
+		this.state.lastRefresh = new Date().toISOString();
+		await this.saveState();
+		await this.logger.info("presence-base-updated", {
+			markers: schedule.map(m => m.name),
+		});
+		
+		// Apply current marker
+		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
+		await this.updatePresence(marker);
+	}
+
+	/**
 	 * Set activity by name (looks up from config.activities).
 	 * @param {string} name - Activity name (e.g., "processing", "thinking")
 	 * @param {Object} [options]
@@ -252,12 +269,18 @@ export class PresenceManager {
 		// Skip if dynamic presence is active
 		if (this.dynamicMarker) return;
 		
-		// Refresh schedule if new day
+		// Refresh schedule if new day - delegate to orchestrator if available
 		if (this.needsRefresh()) {
-			this.state.schedule = this.generateSchedule();
-			this.state.lastRefresh = new Date().toISOString();
-			await this.saveState();
-			await this.logger.info("presence-schedule-refreshed");
+			if (this.onDayRefresh) {
+				// Orchestrator handles contextual schedule generation
+				await this.onDayRefresh();
+			} else {
+				// Fallback: use static schedule
+				this.state.schedule = this.generateSchedule();
+				this.state.lastRefresh = new Date().toISOString();
+				await this.saveState();
+				await this.logger.info("presence-schedule-refreshed");
+			}
 		}
 
 		const schedule = this.state.schedule.length > 0

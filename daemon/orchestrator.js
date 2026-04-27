@@ -194,6 +194,100 @@ export class SliceOfLifeOrchestrator {
 	}
 
 	/**
+	 * Generate presence schedule based on memory context and scenes.
+	 * Called at day refresh (00:00) to create contextual schedule.
+	 * @returns {Promise<Array>}
+	 */
+	async generatePresenceSchedule() {
+		const memory = this.memory.getContext();
+		const baseSchedule = this.config.presenceBase ?? this.getDefaultPresenceBase();
+		const sceneEffects = this.getScenePresenceEffects();
+		
+		// Apply scene effects to base schedule
+		const contextualSchedule = baseSchedule.map(marker => {
+			// Check if any scene effect modifies this marker
+			const effect = sceneEffects.find(e => e.targetMarker === marker.name);
+			if (effect) {
+				return { ...marker, ...effect.override };
+			}
+			return marker;
+		});
+		
+		// Memory-based modifications
+		if (memory) {
+			const lastScene = this.state.lastScene;
+			// If late night scene ran, morning is different
+			if (lastScene && lastScene.includes("late")) {
+				const morningIdx = contextualSchedule.findIndex(m => m.name === "morning");
+				if (morningIdx >= 0) {
+					contextualSchedule[morningIdx] = {
+						...contextualSchedule[morningIdx],
+						activity: "Tired morning",
+						status: "idle",
+					};
+				}
+			}
+		}
+		
+		await this.logger.info("presence-schedule-generated", {
+			markers: contextualSchedule.map(m => m.name),
+		});
+		
+		return contextualSchedule;
+	}
+	
+	/**
+	 * Get default presence base schedule.
+	 */
+	getDefaultPresenceBase() {
+		return [
+			{ name: "sleep", status: "idle", activity: "Sleeping", time: "00:00" },
+			{ name: "morning", status: "online", activity: "Good morning", time: "07:00" },
+			{ name: "work", status: "dnd", activity: "Working", time: "09:00" },
+			{ name: "free", status: "online", activity: "Free time", time: "17:00" },
+			{ name: "evening", status: "idle", activity: "Winding down", time: "22:00" },
+		];
+	}
+	
+	/**
+	 * Get presence effects from scenes that have them.
+	 */
+	getScenePresenceEffects() {
+		const effects = [];
+		const now = Date.now();
+		
+		for (const scene of this.config.scenes) {
+			if (scene.presenceEffect) {
+				const lastTrigger = this.state.lastTriggers[scene.name] ?? 0;
+				// Effect persists for 24 hours or until next scene
+				if (now - lastTrigger < 86400000) {
+					effects.push({
+						sceneName: scene.name,
+						targetMarker: scene.presenceEffect.targetMarker,
+						override: scene.presenceEffect.override,
+					});
+				}
+			}
+		}
+		
+		return effects;
+	}
+
+	/**
+	 * Call on day refresh to update presence schedule.
+	 */
+	async onDayRefresh() {
+		if (!this.presenceManager) return;
+		
+		const schedule = await this.generatePresenceSchedule();
+		await this.presenceManager.setBase(schedule);
+		
+		await this.logger.info("orchestrator-day-refresh", {
+			markers: schedule.map(m => m.name),
+		});
+	}
+
+	/**
 	 * Setup cron trigger for a scene.
 	 * @param {SceneConfig} scene
 	 */
