@@ -859,6 +859,80 @@ export class PiDiscordDaemon {
 			return;
 		}
 
+		if (subcommand === "regenerate") {
+			const scope = this.resolveScopeFromChannel(
+				interaction.guildId ?? null,
+				interaction.channelId,
+				interaction.channel,
+			);
+			const route = await this.getExistingRoute(scope);
+			if (!route) {
+				await interaction.reply({
+					content: `Route ${scope.routeKey} has no saved state.`,
+					ephemeral: true,
+				});
+				return;
+			}
+			
+			// Find last bot message in channel
+			const channel = interaction.channel;
+			const messages = await channel.messages.fetch({ limit: 20 });
+			const lastBotMsg = messages.find(m => m.author.id === this.client.user.id);
+			
+			if (!lastBotMsg) {
+				await interaction.reply({
+					content: "No bot message found to regenerate.",
+					ephemeral: true,
+				});
+				return;
+			}
+			
+			// Check authorization: admin or original caller
+			// Find the last user message that triggered the bot response
+			const lastUserMsg = messages.find(m => !m.author.bot && m.id !== interaction.id);
+			const isOriginalCaller = lastUserMsg && lastUserMsg.author.id === interaction.user.id;
+			const canRegenerate = authorization.canControl || isOriginalCaller;
+			
+			if (!canRegenerate) {
+				await interaction.reply({
+					content: "Only the original caller or admin may regenerate.",
+					ephemeral: true,
+				});
+				return;
+			}
+			
+			// Get the prompt from the last user message
+			const promptText = lastUserMsg?.content ?? "Continue.";
+			
+			// Queue regeneration
+			route.queue.push({
+				id: `regen-${Date.now()}`,
+				state: "queued",
+				source: {
+					kind: "regenerate",
+					sourceId: interaction.id,
+					isAdmin: authorization.canControl,
+					userId: interaction.user.id,
+				},
+				payload: {
+					promptText,
+					attachments: [],
+					targetMessageId: lastBotMsg.id,
+				},
+			});
+			
+			await interaction.reply({
+				content: "Regenerating response...",
+				ephemeral: true,
+			});
+			
+			// Trigger immediate processing
+			this.runInBackground("regenerate-queue", async () => {
+				await this.runQueueForRoute(route);
+			});
+			return;
+		}
+
 		if (subcommand !== "ask") return;
 
 		const rawText = interaction.options.getString("text", true).trim();
@@ -1101,13 +1175,41 @@ export class PiDiscordDaemon {
 			const shouldPost =
 				assistantText.trim() &&
 				!(isTrigger && assistantText.includes("[NO_OUTREACH]"));
-			if (shouldPost) {
+			const isRegenerate = leasedItem.source.kind === "regenerate";
+			
+			if (shouldPost || isRegenerate) {
 				const channel = await route.renderer.getTargetChannel();
-				for (const chunk of splitDiscordText(assistantText)) {
-					await channel.send({
-						content: chunk,
-						allowedMentions: { parse: [] },
-					});
+			
+				if (isRegenerate && leasedItem.payload.targetMessageId) {
+					// Edit existing message for regenerate
+					try {
+						const targetMsg = await channel.messages.fetch(leasedItem.payload.targetMessageId);
+						const chunks = splitDiscordText(assistantText.trim() || "(empty response)");
+						await targetMsg.edit({ content: chunks[0] ?? "(empty)" });
+						// If multiple chunks, post additional messages
+						for (const chunk of chunks.slice(1)) {
+							await channel.send({
+								content: chunk,
+								allowedMentions: { parse: [] },
+							});
+						}
+					} catch (editErr) {
+						// Message might be deleted, send as new
+						for (const chunk of splitDiscordText(assistantText)) {
+							await channel.send({
+								content: chunk,
+								allowedMentions: { parse: [] },
+							});
+						}
+					}
+				} else {
+					// Normal send
+					for (const chunk of splitDiscordText(assistantText)) {
+						await channel.send({
+							content: chunk,
+							allowedMentions: { parse: [] },
+						});
+					}
 				}
 			}
 
