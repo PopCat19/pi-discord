@@ -6,7 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { getPaths } from "../lib/paths.js";
-import { createDefaultConfig } from "../lib/config.js";
+import { createDefaultConfig, loadConfig } from "../lib/config.js";
+import { syncSlashCommands } from "../lib/discord-commands.js";
 
 const packageRoot = path.dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
 const agentDir = path.join(homedir(), ".pi", "agent");
@@ -23,6 +24,7 @@ const COMMANDS = {
 	edit: { args: ["name"], desc: "Open instance config in editor" },
 	remove: { args: ["name"], desc: "Remove an instance (keeps workspace data)" },
 	migrate: { args: ["name"], desc: "Migrate legacy instance to new location" },
+	"sync-commands": { args: ["name"], desc: "Sync slash commands to Discord" },
 };
 
 function printUsage() {
@@ -361,6 +363,32 @@ function cmdMigrate(name) {
 	console.log(`  rm -rf ${legacyDir}`);
 }
 
+async function cmdSyncCommands(name) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+	const paths = getPaths({ workspaceDir });
+	const config = await loadConfig(paths);
+
+	if (!config.botToken || !config.applicationId) {
+		console.error(`Instance "${name}" missing botToken or applicationId in config.`);
+		process.exit(1);
+	}
+
+	console.log(`Syncing commands for "${name}"...`);
+	try {
+		const result = await syncSlashCommands(config);
+		console.log(`Synced ${result.count} commands ${result.scope === "global" ? "globally" : "to guild(s)"}.`);
+	} catch (err) {
+		console.error(`Failed to sync commands: ${err.message}`);
+		process.exit(1);
+	}
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 
@@ -421,6 +449,9 @@ async function main() {
 			break;
 		case "migrate":
 			cmdMigrate(cmdArgs[0]);
+			break;
+		case "sync-commands":
+			await cmdSyncCommands(cmdArgs[0]);
 			break;
 	}
 }
