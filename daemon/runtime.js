@@ -22,6 +22,7 @@ import { authorizeInteraction } from "./authz.js";
 import { JournalStore } from "./journal.js";
 import { Logger } from "./logger.js";
 import { SliceOfLifeOrchestrator } from "./orchestrator.js";
+import { PresenceManager } from "./presence-manager.js";
 import { buildPromptText } from "./prompt-shaper.js";
 import { RouteQueueStore } from "./queue-store.js";
 import { createRouteManifest, RouteRegistry } from "./registry.js";
@@ -76,6 +77,7 @@ export class PiDiscordDaemon {
 		this.stopping = false;
 		this.status = {};
 		this.orchestrator = undefined; // Initialized on client ready
+		this.presenceManager = undefined; // Initialized on client ready
 	}
 
 	runInBackground(label, task, details = {}) {
@@ -163,6 +165,11 @@ export class PiDiscordDaemon {
 			// Initialize orchestrator if configured
 			if (this.config.sliceOfLife?.enabled) {
 				await this.initOrchestrator();
+			}
+
+			// Initialize presence manager if configured
+			if (this.config.presence?.enabled) {
+				await this.initPresenceManager();
 			}
 		});
 
@@ -541,12 +548,17 @@ export class PiDiscordDaemon {
 	}
 
 	async handleMessageCreate(message) {
-		// Check for bot messages - handle in orchestrator if slice-of-life channel
 		if (!this.client.user) return;
+		
+		// Handle bot messages for followup (any channel)
 		if (message.author?.bot) {
 			// Skip self messages
 			if (message.author.id === this.client.user.id) return;
-			// Pass to orchestrator for potential bot-to-bot interaction
+			// Pass to followup handler
+			if (this.config.botFollowup?.enabled) {
+				await this.handleBotFollowup(message);
+			}
+			// Also pass to orchestrator for slice-of-life
 			if (this.orchestrator && message.channelId === this.config.sliceOfLife?.channelId) {
 				await this.orchestrator.handleBotMessage(message);
 			}
@@ -1196,8 +1208,19 @@ export class PiDiscordDaemon {
 		await writeJson(this.paths.statusPath, this.status);
 	}
 
+	async initPresenceManager() {
+		this.presenceManager = new PresenceManager({
+			config: this.config.presence ?? {},
+			client: this.client,
+			workspaceDir: this.paths.workspaceDir,
+			logger: this.logger,
+		});
+		this.presenceManager.start();
+		await this.logger.info("presence-manager-started");
+	}
+
 	async initOrchestrator() {
-		const instanceName = this.config.sliceOfLife?.primaryInstance ?? "plana";
+		const instanceName = this.config.sliceOfLife?.primaryInstance ?? this.client.user?.tag?.split('#')[0] ?? "unknown";
 		
 		// Session will be created lazily
 		this.orchestratorSession = null;
@@ -1288,10 +1311,57 @@ export class PiDiscordDaemon {
 		return session;
 	}
 
+	/**
+	 * Handle followup to another bot's message.
+	 * @param {import('discord.js').Message} message
+	 */
+	async handleBotFollowup(message) {
+		const config = this.config.botFollowup;
+		
+		// Check cooldown
+		const cooldown = config.cooldown ?? 60000;
+		if (Date.now() - (this.lastBotFollowup ?? 0) < cooldown) return;
+		
+		// Check chance
+		if (Math.random() > (config.chance ?? 0.5)) return;
+		
+		// Only respond if this bot is in the allowed responders
+		const instanceTag = this.client.user?.tag?.split('#')[0] ?? 'unknown';
+		if (config.responders && !config.responders.includes(instanceTag.toLowerCase())) return;
+		
+		// Build response prompt
+		const speaker = message.author.username;
+		const content = message.content || "(no text)";
+		const prompt = config.promptTemplate ??
+			"{speaker} posted: {content}\n\nReact or respond in character.";
+		const fullPrompt = prompt.replace("{speaker}", speaker).replace("{content}", content);
+		
+		// Generate response
+		try {
+			const session = await this.createOrchestratorSession();
+			let response = "";
+			const unsubscribe = session.subscribe((event) => {
+				if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+					response += event.assistantMessageEvent.delta;
+				}
+			});
+			await session.prompt(fullPrompt);
+			unsubscribe();
+			
+			if (response) {
+				await message.channel.send(response);
+				this.lastBotFollowup = Date.now();
+			}
+		} catch (err) {
+			await this.logger.error("bot-followup-failed", { error: String(err) });
+		}
+	}
+
 	async stop() {
 		this.stopping = true;
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		if (this.triggerInterval) clearInterval(this.triggerInterval);
+		if (this.presenceManager) this.presenceManager.stop();
 		if (this.orchestrator) await this.orchestrator.stop();
 		for (const active of this.currentRuns.values()) {
 			await active.abort().catch(() => undefined);

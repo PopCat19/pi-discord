@@ -7,7 +7,7 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @typedef {Object} SceneConfig
  * @property {string} name
  * @property {{ cron?: string, rng?: { chance: number, interval: number }, search?: { query: string, schedule: string } }} trigger
- * @property {string} speaker - Which instance speaks ("plana" | "arona")
+ * @property {string} speaker - Which instance speaks (e.g., instance name)
  * @property {string} prompt - Prompt for scene generation
  * @property {number} [turns=1] - For future inter-bot scenes
  */
