@@ -905,9 +905,7 @@ export class PiDiscordDaemon {
 			const promptText = lastUserMsg?.content ?? "Continue.";
 			
 			// Queue regeneration
-			route.queue.push({
-				id: `regen-${Date.now()}`,
-				state: "queued",
+			await route.queue.enqueue({
 				source: {
 					kind: "regenerate",
 					sourceId: interaction.id,
