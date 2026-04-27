@@ -13,7 +13,7 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  */
 
 /**
- * @typedef {Object} SliceOfLifeConfig
+ * @typedef {Object} SliceOfBreadConfig
  * @property {boolean} enabled
  * @property {string} channelId - Discord channel ID
  * @property {string} primaryInstance - Which instance runs orchestrator
@@ -38,10 +38,10 @@ import { ChannelMemory } from "../lib/channel-memory.js";
 const DEFAULT_COOLDOWN = 3600000; // 1 hour
 const STATE_FILE = "orchestrator-state.json";
 
-export class SliceOfLifeOrchestrator {
+export class SliceOfBreadOrchestrator {
 	/**
 	 * @param {{
-	 *   config: SliceOfLifeConfig,
+	 *   config: SliceOfBreadConfig,
 	 *   discordClient: import('discord.js').Client,
 	 *   getSession?: () => Promise<{ send: (prompt: string) => Promise<{ text: string }> }>,
 	 *   paths: { workspaceDir: string },
@@ -60,7 +60,7 @@ export class SliceOfLifeOrchestrator {
 		this.presenceConfig = options.presenceConfig;
 
 		this.memory = new ChannelMemory({
-			path: `${options.paths.workspaceDir}/../shared-routes/slice-of-life/memory.json`,
+			path: `${options.paths.workspaceDir}/../shared-routes/slice-of-bread/memory.json`,
 			maxTokens: 8192,
 			getSession: options.getSession,
 		});
@@ -136,7 +136,7 @@ export class SliceOfLifeOrchestrator {
 	}
 
 	/**
-	 * Handle a message from another bot in the slice-of-life channel.
+	 * Handle a message from another bot in the slice-of-bread channel.
 	 * @param {import('discord.js').Message} message
 	 */
 	async handleBotMessage(message) {
@@ -415,10 +415,10 @@ export class SliceOfLifeOrchestrator {
 				await this.presenceManager.setActivity(scene.presence, { ttl: 120000 });
 			}
 
-			// Get channel (board or regular slice-of-life)
+			// Get channel (board or regular slice-of-bread)
 			const targetChannelId = scene?.board ? this.config.boardChannelId : this.config.channelId;
 			if (!targetChannelId) {
-				throw new Error(`No channel configured for ${scene?.board ? 'board' : 'slice-of-life'}`);
+				throw new Error(`No channel configured for ${scene?.board ? 'board' : 'slice-of-bread'}`);
 			}
 			const channel = await this.discordClient.channels.fetch(targetChannelId);
 			if (!channel || !channel.isTextBased()) {

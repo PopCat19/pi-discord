@@ -22,7 +22,7 @@ import { authorizeInteraction } from "./authz.js";
 import { ChannelMemory } from "../lib/channel-memory.js";
 import { JournalStore } from "./journal.js";
 import { Logger } from "./logger.js";
-import { SliceOfLifeOrchestrator } from "./orchestrator.js";
+import { SliceOfBreadOrchestrator } from "./orchestrator.js";
 import { PresenceManager } from "./presence-manager.js";
 import { buildPromptText } from "./prompt-shaper.js";
 import { RouteQueueStore } from "./queue-store.js";
@@ -170,7 +170,7 @@ export class PiDiscordDaemon {
 				}
 
 				// Initialize orchestrator if configured
-				if (this.config.sliceOfLife?.enabled) {
+				if (this.config.sliceOfBread?.enabled) {
 					await this.initOrchestrator();
 				}
 				
@@ -573,8 +573,8 @@ export class PiDiscordDaemon {
 			if (this.config.botFollowup?.enabled) {
 				await this.handleBotFollowup(message);
 			}
-			// Also pass to orchestrator for slice-of-life
-			if (this.orchestrator && message.channelId === this.config.sliceOfLife?.channelId) {
+			// Also pass to orchestrator for slice-of-bread
+			if (this.orchestrator && message.channelId === this.config.sliceOfBread?.channelId) {
 				await this.orchestrator.handleBotMessage(message);
 			}
 			return;
@@ -1538,7 +1538,7 @@ export class PiDiscordDaemon {
 	}
 
 	async initOrchestrator() {
-		const instanceName = this.config.sliceOfLife?.primaryInstance ?? this.client.user?.tag?.split('#')[0] ?? "unknown";
+		const instanceName = this.config.sliceOfBread?.primaryInstance ?? this.client.user?.tag?.split('#')[0] ?? "unknown";
 		
 		// Session will be created lazily
 		this.orchestratorSession = null;
@@ -1564,8 +1564,8 @@ export class PiDiscordDaemon {
 			};
 		};
 
-		this.orchestrator = new SliceOfLifeOrchestrator({
-			config: this.config.sliceOfLife,
+		this.orchestrator = new SliceOfBreadOrchestrator({
+			config: this.config.sliceOfBread,
 			discordClient: this.client,
 			getSession,
 			paths: this.paths,
@@ -1583,7 +1583,7 @@ export class PiDiscordDaemon {
 		await this.orchestrator.start();
 		await this.logger.info("orchestrator-initialized", {
 			instanceName,
-			scenes: this.config.sliceOfLife?.scenes?.map(s => s.name) ?? [],
+			scenes: this.config.sliceOfBread?.scenes?.map(s => s.name) ?? [],
 		});
 	}
 
