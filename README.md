@@ -17,6 +17,24 @@ A Discord bot that brings Pi into your server. Mention the bot or use slash comm
 > 
 > New instances are stored in `~/.pi/agent/pi-discord-instances/`.
 
+## Directory Layout
+
+```
+Source repository (your dev fork):
+  ~/pi-discord-fork/           # git repo, package.json, source code
+
+Instance directories (runtime data):
+  ~/.pi/agent/pi-discord-instances/
+    ├── plana/workspace/        # config.json, system-prompt.md, routes/, sessions/
+    └── arona/workspace/        # another bot instance
+
+Legacy (pre-multi-instance):
+  ~/.pi/agent/pi-discord/      # still works, shown as "(legacy)" in CLI
+```
+
+When you `pi install git:github.com/PopCat19/pi-discord`, pi clones the source repo.
+The `pi-discord` CLI creates instance directories at runtime.
+
 **How it works:** A detached daemon listens for Discord mentions, DMs, and slash commands. Each channel gets its own persistent Pi session, so follow-up questions remember earlier conversation. When a message comes in, the daemon calls `session.prompt()`, subscribes to the response stream, and live-updates the Discord reply as text streams back. Operator runs `/discord start|stop|status` from Pi to control it.
 
 Requires a bot token and application id from the Discord Developer Portal.
