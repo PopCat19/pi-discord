@@ -199,6 +199,22 @@ function cmdStart(name) {
 		return;
 	}
 
+	// Sync slash commands if configured
+	try {
+		const config = loadConfig(getPaths({ workspaceDir }));
+		if (config.syncCommandsOnStart) {
+			const canSync = config.registerCommandsGlobally || config.allowedGuildIds.length > 0;
+			if (canSync) {
+				console.log("Syncing slash commands...");
+				syncSlashCommands(config).catch(err => {
+					console.error(`Slash command sync failed: ${err.message}`);
+				});
+			}
+		}
+	} catch (err) {
+		// Config load failed, continue anyway
+	}
+
 	console.log(`Starting instance "${name}"...`);
 	const daemonPath = path.join(packageRoot, "bin", "pi-discord-daemon.mjs");
 	const child = spawn("node", [daemonPath, "--workspace", workspaceDir], {
