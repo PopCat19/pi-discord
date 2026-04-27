@@ -13,6 +13,7 @@ import { getRoutePaths } from "../lib/paths.js";
 import { authorizeInteraction } from "./authz.js";
 import { JournalStore } from "./journal.js";
 import { Logger } from "./logger.js";
+import { SliceOfLifeOrchestrator } from "./orchestrator.js";
 import { buildPromptText } from "./prompt-shaper.js";
 import { RouteQueueStore } from "./queue-store.js";
 import { createRouteManifest, RouteRegistry } from "./registry.js";
@@ -66,6 +67,7 @@ export class PiDiscordDaemon {
 		this.triggerInterval = undefined;
 		this.stopping = false;
 		this.status = {};
+		this.orchestrator = undefined; // Initialized on client ready
 	}
 
 	runInBackground(label, task, details = {}) {
@@ -149,6 +151,11 @@ export class PiDiscordDaemon {
 			await this.writeStatus({ phase: "ready", userTag: client.user.tag });
 			await this.reconcileKnownRoutes();
 			await this.scheduleWork();
+			
+			// Initialize orchestrator if configured
+			if (this.config.sliceOfLife?.enabled) {
+				await this.initOrchestrator();
+			}
 		});
 
 		this.client.on(Events.MessageCreate, async (message) => {
@@ -537,7 +544,7 @@ export class PiDiscordDaemon {
 		const botMentioned =
 			message.mentions.users.has(this.client.user.id) ||
 			(message.guildId &&
-				message.mentions.roles.some((role) => {
+				message.mentions.roles?.some((role) => {
 					const botMember = message.guild?.members?.me;
 					return botMember?.roles?.cache?.has(role.id);
 				}));
@@ -1171,10 +1178,47 @@ export class PiDiscordDaemon {
 		await writeJson(this.paths.statusPath, this.status);
 	}
 
+	async initOrchestrator() {
+		// Determine instance name from config (fallback to "plana")
+		const instanceName = this.config.sliceOfLife?.primaryInstance ?? "plana";
+		
+		// Create session getter for orchestrator
+		const getSession = async () => {
+			return {
+				send: async (prompt) => {
+					const result = await this.generateOrchestratorContent(prompt);
+					return { text: result };
+				},
+			};
+		};
+
+		this.orchestrator = new SliceOfLifeOrchestrator({
+			config: this.config.sliceOfLife,
+			discordClient: this.client,
+			getSession,
+			paths: this.paths,
+			logger: this.logger,
+			instanceName,
+		});
+
+		await this.orchestrator.start();
+		await this.logger.info("orchestrator-initialized", {
+			instanceName,
+			scenes: this.config.sliceOfLife?.scenes?.map(s => s.name) ?? [],
+		});
+	}
+
+	async generateOrchestratorContent(prompt) {
+		// Phase 1: return prompt template (no model generation)
+		// Phase 2: integrate with pi-coding-agent session
+		return prompt;
+	}
+
 	async stop() {
 		this.stopping = true;
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		if (this.triggerInterval) clearInterval(this.triggerInterval);
+		if (this.orchestrator) await this.orchestrator.stop();
 		for (const active of this.currentRuns.values()) {
 			await active.abort().catch(() => undefined);
 		}
