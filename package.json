@@ -4,6 +4,7 @@
 	"version": "0.2.5",
 	"type": "module",
 	"bin": {
+		"pi-discord": "./bin/pi-discord.mjs",
 		"pi-discord-daemon": "./bin/pi-discord-daemon.mjs"
 	},
 	"scripts": {
