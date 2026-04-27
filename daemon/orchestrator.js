@@ -250,14 +250,16 @@ export class SliceOfLifeOrchestrator {
 			return;
 		}
 
-		// Check cooldown
-		const cooldown = this.config.cooldown ?? DEFAULT_COOLDOWN;
-		if (Date.now() - (this.state.lastSceneTime ?? 0) < cooldown) {
-			await this.logger.info("scene-cooldown", {
-				sceneName,
-				remaining: cooldown - (Date.now() - (this.state.lastSceneTime ?? 0)),
-			});
-			return;
+		// Check cooldown (skip for manual triggers)
+		if (triggerType !== "manual") {
+			const cooldown = this.config.cooldown ?? DEFAULT_COOLDOWN;
+			if (Date.now() - (this.state.lastSceneTime ?? 0) < cooldown) {
+				await this.logger.info("scene-cooldown", {
+					sceneName,
+					remaining: cooldown - (Date.now() - (this.state.lastSceneTime ?? 0)),
+				});
+				return;
+			}
 		}
 
 		// Check if this instance should speak
