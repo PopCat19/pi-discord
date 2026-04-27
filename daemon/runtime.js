@@ -8,6 +8,14 @@ import {
 	GatewayIntentBits,
 	Partials,
 } from "discord.js";
+import {
+	AuthStorage,
+	createAgentSession,
+	DefaultResourceLoader,
+	ModelRegistry,
+	SessionManager,
+	SettingsManager,
+} from "@mariozechner/pi-coding-agent";
 import { ensureDir, pathExists, removeIfExists, writeJson } from "../lib/fs.js";
 import { getRoutePaths } from "../lib/paths.js";
 import { authorizeInteraction } from "./authz.js";
@@ -1179,15 +1187,21 @@ export class PiDiscordDaemon {
 	}
 
 	async initOrchestrator() {
-		// Determine instance name from config (fallback to "plana")
 		const instanceName = this.config.sliceOfLife?.primaryInstance ?? "plana";
+		
+		// Session will be created lazily
+		this.orchestratorSession = null;
 		
 		// Create session getter for orchestrator
 		const getSession = async () => {
+			if (!this.orchestratorSession) {
+				this.orchestratorSession = await this.createOrchestratorSession();
+			}
+			// Wrap session to provide simple send interface
 			return {
 				send: async (prompt) => {
-					const result = await this.generateOrchestratorContent(prompt);
-					return { text: result };
+					const result = await this.orchestratorSession.send(prompt);
+					return { text: typeof result === "string" ? result : result.text ?? String(result) };
 				},
 			};
 		};
@@ -1208,10 +1222,53 @@ export class PiDiscordDaemon {
 		});
 	}
 
-	async generateOrchestratorContent(prompt) {
-		// Phase 1: return prompt template (no model generation)
-		// Phase 2: integrate with pi-coding-agent session
-		return prompt;
+	async createOrchestratorSession() {
+		const agentDir = path.join(this.paths.workspaceDir, "../..");
+		const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
+		const modelRegistry = await ModelRegistry.create(authStorage, `${agentDir}/models.json`);
+		const settingsManager = SettingsManager.create(this.paths.workspaceDir, agentDir);
+		
+		// Get system prompt from config
+		const systemPrompt = this.config.systemPrompt;
+		
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: this.paths.workspaceDir,
+			agentDir,
+			settingsManager,
+			noExtensions: true,
+			noPromptTemplates: true,
+			noThemes: true,
+			systemPrompt,
+		});
+		await resourceLoader.reload();
+
+		const sessionsDir = path.join(this.paths.workspaceDir, "orchestrator-sessions");
+		await ensureDir(sessionsDir);
+		const sessionManager = SessionManager.create(this.paths.workspaceDir, sessionsDir);
+
+		// Get model from config
+		let model;
+		const agentModel = this.config.defaultModel;
+		if (agentModel) {
+			const [provider, ...rest] = agentModel.split("/");
+			if (provider && rest.length > 0) {
+				model = modelRegistry.find(provider, rest.join("/"));
+			}
+		}
+
+		const { session } = await createAgentSession({
+			cwd: this.paths.workspaceDir,
+			agentDir,
+			authStorage,
+			modelRegistry,
+			sessionManager,
+			settingsManager,
+			resourceLoader,
+			model,
+			thinkingLevel: this.config.defaultThinkingLevel ?? "medium",
+		});
+
+		return session;
 	}
 
 	async stop() {
