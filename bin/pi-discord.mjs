@@ -17,9 +17,9 @@ const legacyDir = path.join(agentDir, "pi-discord"); // Old single-instance loca
 const COMMANDS = {
 	create: { args: ["name"], desc: "Create a new instance with default config" },
 	list: { args: [], desc: "List all instances" },
-	start: { args: ["name"], desc: "Start an instance" },
-	stop: { args: ["name"], desc: "Stop an instance" },
-	restart: { args: ["name"], desc: "Restart an instance" },
+	start: { args: ["name..."], desc: "Start one or more instances" },
+	stop: { args: ["name..."], desc: "Stop one or more instances" },
+	restart: { args: ["name..."], desc: "Restart one or more instances" },
 	status: { args: ["name?"], desc: "Show status of instance(s)" },
 	edit: { args: ["name"], desc: "Open instance config in editor" },
 	remove: { args: ["name"], desc: "Remove an instance (keeps workspace data)" },
@@ -478,13 +478,19 @@ async function main() {
 			cmdList();
 			break;
 		case "start":
-			cmdStart(cmdArgs[0]).catch(err => console.error(err.message));
+			for (const name of cmdArgs) {
+				await cmdStart(name);
+			}
 			break;
 		case "stop":
-			cmdStop(cmdArgs[0]);
+			for (const name of cmdArgs) {
+				cmdStop(name);
+			}
 			break;
 		case "restart":
-			cmdRestart(cmdArgs[0]).catch(err => console.error(err.message));
+			for (const name of cmdArgs) {
+				await cmdRestart(name);
+			}
 			break;
 		case "status":
 			cmdStatus(cmdArgs[0]);
