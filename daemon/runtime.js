@@ -1318,6 +1318,12 @@ export class PiDiscordDaemon {
 	async handleBotFollowup(message) {
 		const config = this.config.botFollowup;
 		
+		// Check if bot is available for followup (online presence)
+		if (this.presenceManager) {
+			const info = this.presenceManager.getInfo();
+			if (info.status !== "online") return; // Skip if not available
+		}
+		
 		// Check cooldown
 		const cooldown = config.cooldown ?? 60000;
 		if (Date.now() - (this.lastBotFollowup ?? 0) < cooldown) return;
