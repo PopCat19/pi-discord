@@ -541,7 +541,17 @@ export class PiDiscordDaemon {
 	}
 
 	async handleMessageCreate(message) {
-		if (!this.client.user || message.author?.bot) return;
+		// Check for bot messages - handle in orchestrator if slice-of-life channel
+		if (!this.client.user) return;
+		if (message.author?.bot) {
+			// Skip self messages
+			if (message.author.id === this.client.user.id) return;
+			// Pass to orchestrator for potential bot-to-bot interaction
+			if (this.orchestrator && message.channelId === this.config.sliceOfLife?.channelId) {
+				await this.orchestrator.handleBotMessage(message);
+			}
+			return;
+		}
 		const authorization = authorizeInteraction(
 			message,
 			this.config,

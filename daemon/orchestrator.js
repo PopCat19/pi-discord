@@ -19,6 +19,12 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @property {string} primaryInstance - Which instance runs orchestrator
  * @property {SceneConfig[]} scenes
  * @property {number} [cooldown=3600000] - Min time between scenes (default 1h)
+ * @property {Object} [botFollowup] - Bot message followup settings
+ * @property {boolean} botFollowup.enabled - Enable responding to other bots
+ * @property {number} [botFollowup.cooldown=60000] - Min time between bot responses (default 1m)
+ * @property {string[]} botFollowup.responders - Instance names that can respond
+ * @property {number} [botFollowup.chance=0.5] - Probability of responding (default 50%)
+ * @property {string} [botFollowup.promptTemplate] - Prompt template with {speaker}, {content}
  */
 
 /**
@@ -125,6 +131,46 @@ export class SliceOfLifeOrchestrator {
 				this.logger.error("scene-trigger-check-failed", { error: String(err) })
 			);
 		}, 5000); // Check every 5 seconds
+	}
+
+	/**
+	 * Handle a message from another bot in the slice-of-life channel.
+	 * @param {import('discord.js').Message} message
+	 */
+	async handleBotMessage(message) {
+		// Check if bot followup is enabled
+		if (!this.config.botFollowup?.enabled) return;
+
+		// Check cooldown for bot messages (shorter than regular cooldown)
+		const botCooldown = this.config.botFollowup.cooldown ?? 60000; // 1 minute default
+		if (Date.now() - (this.state.lastBotMessageTime ?? 0) < botCooldown) {
+			return;
+		}
+
+		// Check if this bot instance should respond
+		const respondable = this.config.botFollowup.responders ?? [this.instanceName];
+		if (!respondable.includes(this.instanceName)) return;
+
+		// RNG check for response chance
+		const chance = this.config.botFollowup.chance ?? 0.5; // 50% chance default
+		if (Math.random() > chance) return;
+
+		// Build prompt with context of the other bot's message
+		const speakerName = message.author.username;
+		const content = message.content || "(no text content)";
+		const prompt = this.config.botFollowup.promptTemplate ??
+			"Another bot ({speaker}) posted: {content}\n\nReact or respond in character.";
+
+		const fullPrompt = prompt
+			.replace("{speaker}", speakerName)
+			.replace("{content}", content);
+
+		// Trigger the response
+		await this.triggerScene("bot-followup", "bot-message", fullPrompt);
+
+		// Update state
+		this.state.lastBotMessageTime = Date.now();
+		await this.saveState();
 	}
 
 	/**
@@ -241,17 +287,20 @@ export class SliceOfLifeOrchestrator {
 	/**
 	 * Trigger a scene by name.
 	 * @param {string} sceneName
-	 * @param {string} triggerType - "cron" | "rng" | "manual"
+	 * @param {string} triggerType - "cron" | "rng" | "manual" | "bot-message"
+	 * @param {string} [customPrompt] - Optional custom prompt (for ad-hoc triggers)
 	 */
-	async triggerScene(sceneName, triggerType = "manual") {
+	async triggerScene(sceneName, triggerType = "manual", customPrompt = null) {
 		const scene = this.config.scenes.find(s => s.name === sceneName);
-		if (!scene) {
+		
+		// For ad-hoc triggers with custom prompt, scene config is optional
+		if (!scene && !customPrompt) {
 			await this.logger.error("scene-not-found", { sceneName });
 			return;
 		}
 
-		// Check cooldown (skip for manual triggers)
-		if (triggerType !== "manual") {
+		// Check cooldown (skip for manual and bot-message triggers)
+		if (triggerType !== "manual" && triggerType !== "bot-message") {
 			const cooldown = this.config.cooldown ?? DEFAULT_COOLDOWN;
 			if (Date.now() - (this.state.lastSceneTime ?? 0) < cooldown) {
 				await this.logger.info("scene-cooldown", {
@@ -262,8 +311,8 @@ export class SliceOfLifeOrchestrator {
 			}
 		}
 
-		// Check if this instance should speak
-		if (scene.speaker !== this.instanceName) {
+		// Check if this instance should speak (skip for ad-hoc triggers)
+		if (scene && scene.speaker !== this.instanceName) {
 			await this.logger.info("scene-skipped-wrong-speaker", {
 				sceneName,
 				speaker: scene.speaker,
@@ -272,10 +321,12 @@ export class SliceOfLifeOrchestrator {
 			return;
 		}
 
+		const speaker = scene?.speaker ?? this.instanceName;
+
 		await this.logger.info("scene-triggered", {
 			sceneName,
 			triggerType,
-			speaker: scene.speaker,
+			speaker,
 		});
 
 		try {
@@ -285,9 +336,9 @@ export class SliceOfLifeOrchestrator {
 				throw new Error(`Channel ${this.config.channelId} not found or not text-based`);
 			}
 
-			// Build prompt with memory context
+			// Build prompt with memory context (or use custom prompt)
 			const memoryContext = this.memory.getContext();
-			const fullPrompt = this.buildScenePrompt(scene, memoryContext);
+			const fullPrompt = customPrompt ?? this.buildScenePrompt(scene, memoryContext);
 
 			// Generate or use template
 			let content;
@@ -297,7 +348,7 @@ export class SliceOfLifeOrchestrator {
 				content = typeof result === "string" ? result : result.text ?? String(result);
 			} else {
 				// Fallback: use prompt directly as content (template mode)
-				content = scene.prompt;
+				content = customPrompt ?? scene.prompt;
 			}
 
 			// Post to Discord
@@ -305,15 +356,15 @@ export class SliceOfLifeOrchestrator {
 
 			// Log to memory
 			this.memory.append({
-				scene: scene.name,
-				topic: scene.name,
-				turns: [{ speaker: scene.speaker, text: content }],
+				scene: sceneName,
+				topic: sceneName,
+				turns: [{ speaker, text: content }],
 			});
 
 			// Update state
-			this.state.lastScene = scene.name;
+			this.state.lastScene = sceneName;
 			this.state.lastSceneTime = Date.now();
-			this.state.lastTriggers[scene.name] = Date.now();
+			if (scene) this.state.lastTriggers[scene.name] = Date.now();
 			await this.saveState();
 
 			await this.logger.info("scene-completed", {
