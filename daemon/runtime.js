@@ -775,6 +775,50 @@ export class PiDiscordDaemon {
 			return;
 		}
 
+		if (subcommand === "wipe") {
+			if (!authorization.canControl) {
+				await interaction.reply({
+					content: "Only admin Discord user ids may wipe routes.",
+					ephemeral: true,
+				});
+				return;
+			}
+			const scope = this.resolveScopeFromChannel(
+				interaction.guildId ?? null,
+				interaction.channelId,
+				interaction.channel,
+			);
+			await this.abortRoute(scope.routeKey);
+			const route = await this.getExistingRoute(scope);
+			if (!route) {
+				await interaction.reply({
+					content: `Route ${scope.routeKey} has no saved state to wipe.`,
+					ephemeral: true,
+				});
+				return;
+			}
+			await route.host.dispose();
+			route.manifest.sessionFile = undefined;
+			await this.registry.saveManifest(route.manifest);
+			// Clear journal and memory for full context wipe
+			const routePaths = getRoutePaths(this.paths, route.manifest);
+			await Promise.all([
+				removeIfExists(routePaths.journalPath),
+				removeIfExists(routePaths.sharedMemoryPath),
+			]);
+			// Clear in-memory journal
+			route.journal.entries.length = 0;
+			await interaction.reply({
+				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
+				ephemeral: true,
+			});
+			await interaction.reply({
+				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
+				ephemeral: true,
+			});
+			return;
+		}
+
 		if (subcommand !== "ask") return;
 
 		const rawText = interaction.options.getString("text", true).trim();
