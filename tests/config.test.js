@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -147,4 +147,70 @@ test("validation rejects fractional runtime timing and concurrency values", () =
 			(entry) => entry.includes("primaryFlushMs") && entry.includes("integer"),
 		),
 	);
+});
+
+test("loadConfig resolves systemPromptFile into systemPrompt", async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-discord-prompt-"));
+	const workspaceDir = path.join(tempDir, "workspace");
+	const paths = getPaths({ agentDir: tempDir, workspaceDir });
+
+	// Write a prompt file in the config directory (where config.json lives)
+	const promptContent = "Hello from file!";
+	const promptPath = path.join(workspaceDir, "my-prompt.md");
+	await mkdir(path.dirname(promptPath), { recursive: true });
+	await writeFile(promptPath, promptContent, "utf8");
+
+	// Write config referencing the prompt file
+	await saveConfig(paths, {
+		botToken: "test",
+		applicationId: "test",
+		systemPrompt: "inline",
+		systemPromptFile: "my-prompt.md",
+	});
+
+	const config = await loadConfig(paths);
+	assert.equal(config.systemPrompt, "Hello from file!");
+	assert.equal(config.systemPromptFile, "my-prompt.md");
+});
+
+test("loadConfig falls back to inline systemPrompt when file not found", async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-discord-prompt-"));
+	const workspaceDir = path.join(tempDir, "workspace");
+	const paths = getPaths({ agentDir: tempDir, workspaceDir });
+
+	await saveConfig(paths, {
+		botToken: "test",
+		applicationId: "test",
+		systemPrompt: "inline fallback",
+		systemPromptFile: "nonexistent.md",
+	});
+
+	const config = await loadConfig(paths);
+	assert.equal(config.systemPrompt, "inline fallback");
+});
+
+test("loadConfig resolves agent systemPromptFile", async () => {
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-discord-agent-prompt-"));
+	const workspaceDir = path.join(tempDir, "workspace");
+	const paths = getPaths({ agentDir: tempDir, workspaceDir });
+
+	const agentPrompt = "Agent persona from file!";
+	const agentPromptPath = path.join(workspaceDir, "agent-prompt.md");
+	await mkdir(path.dirname(agentPromptPath), { recursive: true });
+	await writeFile(agentPromptPath, agentPrompt, "utf8");
+
+	await saveConfig(paths, {
+		botToken: "test",
+		applicationId: "test",
+		agents: {
+			custom: {
+				systemPrompt: "inline agent",
+				systemPromptFile: "agent-prompt.md",
+			},
+		},
+	});
+
+	const config = await loadConfig(paths);
+	assert.equal(config.agents.custom.systemPrompt, "Agent persona from file!");
+	assert.equal(config.agents.custom.systemPromptFile, "agent-prompt.md");
 });
