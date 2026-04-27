@@ -415,8 +415,12 @@ export class SliceOfLifeOrchestrator {
 				await this.presenceManager.setActivity(scene.presence, { ttl: 120000 });
 			}
 
-			// Get channel
-			const channel = await this.discordClient.channels.fetch(this.config.channelId);
+			// Get channel (board or regular slice-of-life)
+			const targetChannelId = scene?.board ? this.config.boardChannelId : this.config.channelId;
+			if (!targetChannelId) {
+				throw new Error(`No channel configured for ${scene?.board ? 'board' : 'slice-of-life'}`);
+			}
+			const channel = await this.discordClient.channels.fetch(targetChannelId);
 			if (!channel || !channel.isTextBased()) {
 				throw new Error(`Channel ${this.config.channelId} not found or not text-based`);
 			}
