@@ -241,11 +241,11 @@ export class SliceOfLifeOrchestrator {
 	 */
 	getDefaultPresenceBase() {
 		return [
-			{ name: "sleep", status: "idle", activity: "Sleeping", time: "00:00" },
-			{ name: "morning", status: "online", activity: "Good morning", time: "07:00" },
-			{ name: "work", status: "dnd", activity: "Working", time: "09:00" },
-			{ name: "free", status: "online", activity: "Free time", time: "17:00" },
-			{ name: "evening", status: "idle", activity: "Winding down", time: "22:00" },
+			{ name: "sleep", status: "idle", activity: "Standby", time: "00:00" },
+			{ name: "morning", status: "online", activity: "Online", time: "07:00" },
+			{ name: "work", status: "online", activity: "Active", time: "09:00" },
+			{ name: "free", status: "online", activity: "Idle", time: "17:00" },
+			{ name: "evening", status: "idle", activity: "Power save", time: "22:00" },
 		];
 	}
 	
