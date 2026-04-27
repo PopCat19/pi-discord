@@ -1199,9 +1199,16 @@ export class PiDiscordDaemon {
 			}
 			// Wrap session to provide simple send interface
 			return {
-				send: async (prompt) => {
-					const result = await this.orchestratorSession.send(prompt);
-					return { text: typeof result === "string" ? result : result.text ?? String(result) };
+				send: async (promptText) => {
+					let result = "";
+					const unsubscribe = this.orchestratorSession.subscribe((event) => {
+						if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+							result += event.assistantMessageEvent.delta;
+						}
+					});
+					await this.orchestratorSession.prompt(promptText);
+					unsubscribe();
+					return { text: result || promptText };
 				},
 			};
 		};
@@ -1223,7 +1230,7 @@ export class PiDiscordDaemon {
 	}
 
 	async createOrchestratorSession() {
-		const agentDir = path.join(this.paths.workspaceDir, "../..");
+		const agentDir = this.paths.agentDir;
 		const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
 		const modelRegistry = await ModelRegistry.create(authStorage, `${agentDir}/models.json`);
 		const settingsManager = SettingsManager.create(this.paths.workspaceDir, agentDir);
