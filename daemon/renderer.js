@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { DISCORD_MESSAGE_LIMIT } from "../lib/constants.js";
 
+
 export function splitDiscordText(text) {
 	if (!text) return ["(no assistant output)"];
 	const chunks = [];
@@ -100,6 +101,8 @@ export class DiscordRenderer {
 	}
 
 	async updatePrimary(content, { keepStop = true } = {}) {
+		// Debug: log content being rendered
+		console.log("[UPDATE]", JSON.stringify({ contentLen: content.length, last200: content.slice(-200) }));
 		const message = await this.ensurePrimaryMessage(content);
 		const chunks = splitDiscordText(content);
 		const primaryContent =
@@ -234,7 +237,10 @@ export class DiscordRenderer {
 			event.type === "message_update" &&
 			event.assistantMessageEvent.type === "text_delta"
 		) {
-			this.currentAssistantText += event.assistantMessageEvent.delta;
+			const delta = event.assistantMessageEvent.delta;
+			// Debug: log delta with visible newlines
+			console.log("[DELTA]", JSON.stringify({ delta, len: delta.length, hasNewline: delta.includes("\n") }));
+			this.currentAssistantText += delta;
 			this.schedulePrimaryFlush();
 		}
 		if (event.type === "tool_execution_start") {
@@ -268,6 +274,8 @@ export class DiscordRenderer {
 			clearTimeout(this.flushTimer);
 			this.flushTimer = undefined;
 		}
+		// Debug: log final text
+		console.log("[FINAL]", JSON.stringify({ text: this.currentAssistantText.slice(-200), len: this.currentAssistantText.length }));
 		await this.updatePrimary(this.currentAssistantText || "Done.", {
 			keepStop: false,
 		});
