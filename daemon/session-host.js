@@ -76,11 +76,14 @@ export class RouteSessionHost {
 			authStorage,
 			`${this.agentDir}/models.json`,
 		);
-		const settingsManager = SettingsManager.inMemory({
-			compaction: { enabled: true },
-			retry: { enabled: true, maxRetries: 2 },
-			images: { blockImages: !this.config.enableImageInput },
-		});
+		const settingsManager = SettingsManager.create(
+			this.manifest.executionRoot,
+			this.agentDir,
+		);
+		// Override image setting from discord config (without persisting)
+		if (!this.config.enableImageInput) {
+			settingsManager.globalSettings.images = { ...settingsManager.globalSettings.images, blockImages: true };
+		}
 
 		// Resolve agent-specific settings
 		const agentName = this.manifest.currentAgent ?? this.config.defaultAgent;
