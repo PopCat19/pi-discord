@@ -172,6 +172,11 @@ export class PiDiscordDaemon {
 				// Initialize orchestrator if configured
 				if (this.config.sliceOfLife?.enabled) {
 					await this.initOrchestrator();
+				}
+				
+				// Run route cleanup if enabled
+				if (this.config.routeCleanup?.enabled && this.config.routeCleanup.onStartup) {
+					await this.cleanupStaleRoutes();
 			}
 			} catch (err) {
 				await this.logger.error("client-ready-error", { error: String(err) });
@@ -1434,6 +1439,43 @@ export class PiDiscordDaemon {
 			return true;
 		}
 		return false;
+	}
+
+	async cleanupStaleRoutes() {
+		const maxAgeDays = this.config.routeCleanup?.maxAgeDays ?? 30;
+		const now = Date.now();
+		const cutoffMs = maxAgeDays * 24 * 60 * 60 * 1000;
+		const routes = await this.registry.load();
+		let wiped = 0;
+
+		for (const [routeKey] of Object.entries(routes)) {
+			try {
+				const manifest = await this.registry.loadManifest(routeKey);
+				if (!manifest) continue;
+
+				// Check last activity from journal
+				let lastActivity = 0;
+				const routePaths = getRoutePaths(this.paths, routeKey);
+				try {
+					const journal = new JournalStore(routePaths.journalPath);
+					await journal.load();
+					const entries = journal.list();
+					if (entries.length > 0) {
+						lastActivity = Math.max(...entries.map(e => e.timestamp || 0));
+					}
+				} catch {}
+
+				if (now - lastActivity > cutoffMs) {
+					await this.abortRoute(routeKey);
+					await this.registry.deleteManifest(routeKey);
+					wiped++;
+				}
+			} catch {}
+		}
+
+		if (wiped > 0) {
+			await this.logger.info("route-cleanup", { wiped, maxAgeDays });
+		}
 	}
 
 	async reconcileKnownRoutes() {
