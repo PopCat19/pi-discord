@@ -59,9 +59,11 @@ export class SliceOfBreadOrchestrator {
 		this.presenceManager = options.presenceManager;
 		this.presenceConfig = options.presenceConfig;
 
+		// Memory path is configurable, defaults to shared-routes/slice-of-bread/memory.json
+		const memoryPath = this.config.memoryPath ?? `${options.paths.workspaceDir}/../shared-routes/slice-of-bread/memory.json`;
 		this.memory = new ChannelMemory({
-			path: `${options.paths.workspaceDir}/../shared-routes/slice-of-bread/memory.json`,
-			maxTokens: 8192,
+			path: memoryPath,
+			maxTokens: this.config.memoryMaxTokens ?? 8192,
 			getSession: options.getSession,
 		});
 
@@ -121,11 +123,12 @@ export class SliceOfBreadOrchestrator {
 		}
 
 		// Start periodic RNG checks
+		const checkIntervalMs = this.config.checkInterval ?? 60000;
 		this.checkInterval = setInterval(() => {
 			this.checkRngTriggers().catch(err =>
 				this.logger.error("rng-check-failed", { error: String(err) })
 			);
-		}, 60000); // Check RNG every minute
+		}, checkIntervalMs);
 
 		// Check scene triggers more frequently for responsiveness
 		this.sceneTriggerInterval = setInterval(() => {
