@@ -162,6 +162,7 @@ export class PiDiscordDaemon {
 				});
 				await this.writeStatus({ phase: "ready", userTag: client.user.tag });
 				await this.reconcileKnownRoutes();
+				await this.processMissedMentions();
 				await this.scheduleWork();
 				
 				// Initialize presence manager if configured
@@ -1508,6 +1509,52 @@ export class PiDiscordDaemon {
 				}
 			} catch (error) {
 				await this.logger.warn("route-reconcile-failed", {
+					routeKey: summary.routeKey,
+					error: String(error),
+				});
+			}
+		}
+	}
+
+	async processMissedMentions() {
+		// Process the most recent mention for each route that happened while offline
+		for (const summary of this.registry.list()) {
+			try {
+				const route = await this.getExistingRoute({ routeKey: summary.routeKey });
+				if (!route) continue;
+
+				const channel = await this.client.channels.fetch(
+					route.manifest.scope.threadId ?? route.manifest.scope.channelId,
+				);
+				if (!channel || !("messages" in channel)) continue;
+
+				// Fetch recent messages
+				const recent = await channel.messages.fetch({ limit: 20 });
+				
+				// Find the most recent message that mentions the bot
+				let lastMention = null;
+				for (const message of recent.values()) {
+					if (message.author?.bot) continue;
+					const isMention = message.mentions.users.has(this.client.user.id) ||
+						(message.guildId && message.mentions.roles?.some(role =>
+							this.client.user.id in (message.guild?.members.me?.roles.cache ?? {})
+						));
+					if (!isMention) continue;
+					if (route.journal.hasSource(message.id)) continue;
+					lastMention = message;
+					break; // Only get the most recent
+				}
+
+				if (lastMention) {
+					await this.logger.info("processing-missed-mention", {
+						routeKey: summary.routeKey,
+						messageId: lastMention.id,
+					});
+					// Process it like a normal mention
+					await this.handleMessageCreate(lastMention);
+				}
+			} catch (error) {
+				await this.logger.warn("missed-mention-failed", {
 					routeKey: summary.routeKey,
 					error: String(error),
 				});
