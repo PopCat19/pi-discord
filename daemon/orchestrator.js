@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile as writeFileAsync } from "node:fs/promises";
+import path from "node:path";
 import { ChannelMemory } from "../lib/channel-memory.js";
 
 /**
@@ -58,6 +59,7 @@ export class SliceOfLifeOrchestrator {
 
 		this.state = this.loadState();
 		this.checkInterval = null;
+		this.sceneTriggerInterval = null;
 		this.cronTimers = new Map();
 	}
 
@@ -115,7 +117,14 @@ export class SliceOfLifeOrchestrator {
 			this.checkRngTriggers().catch(err =>
 				this.logger.error("rng-check-failed", { error: String(err) })
 			);
-		}, 60000); // Check every minute
+		}, 60000); // Check RNG every minute
+
+		// Check scene triggers more frequently for responsiveness
+		this.sceneTriggerInterval = setInterval(() => {
+			this.checkSceneTriggers().catch(err =>
+				this.logger.error("scene-trigger-check-failed", { error: String(err) })
+			);
+		}, 5000); // Check every 5 seconds
 	}
 
 	/**
@@ -125,6 +134,10 @@ export class SliceOfLifeOrchestrator {
 		if (this.checkInterval) {
 			clearInterval(this.checkInterval);
 			this.checkInterval = null;
+		}
+		if (this.sceneTriggerInterval) {
+			clearInterval(this.sceneTriggerInterval);
+			this.sceneTriggerInterval = null;
 		}
 		for (const timer of this.cronTimers.values()) {
 			clearTimeout(timer);
@@ -200,6 +213,27 @@ export class SliceOfLifeOrchestrator {
 			// RNG check
 			if (Math.random() < chance) {
 				await this.triggerScene(scene.name, "rng");
+			}
+		}
+	}
+
+	/**
+	 * Check for manual scene trigger files.
+	 */
+	async checkSceneTriggers() {
+		const triggersDir = path.join(this.paths.workspaceDir, "scene-triggers");
+		if (!existsSync(triggersDir)) return;
+
+		const files = readdirSync(triggersDir).filter(f => f.endsWith(".json"));
+		for (const file of files) {
+			const triggerPath = path.join(triggersDir, file);
+			try {
+				const trigger = JSON.parse(readFileSync(triggerPath, "utf8"));
+				unlinkSync(triggerPath);
+				await this.triggerScene(trigger.scene, "manual");
+			} catch (err) {
+				await this.logger.error("scene-trigger-parse-failed", { file, error: String(err) });
+				try { unlinkSync(triggerPath); } catch {}
 			}
 		}
 	}

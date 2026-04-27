@@ -25,6 +25,7 @@ const COMMANDS = {
 	remove: { args: ["name"], desc: "Remove an instance (keeps workspace data)" },
 	migrate: { args: ["name"], desc: "Migrate legacy instance to new location" },
 	"sync-commands": { args: ["name"], desc: "Sync slash commands to Discord" },
+	trigger: { args: ["name", "scene"], desc: "Trigger a scene manually" },
 };
 
 function printUsage() {
@@ -389,6 +390,38 @@ async function cmdSyncCommands(name) {
 	}
 }
 
+async function cmdTrigger(name, scene) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+
+	const { running } = readStatus(workspaceDir);
+	if (!running) {
+		console.error(`Instance "${name}" is not running.`);
+		process.exit(1);
+	}
+
+	if (!scene) {
+		console.error("Scene name required.");
+		console.error("Usage: pi-discord trigger <instance> <scene>");
+		process.exit(1);
+	}
+
+	// Write scene trigger file
+	const triggersDir = path.join(workspaceDir, "scene-triggers");
+	if (!existsSync(triggersDir)) {
+		mkdirSync(triggersDir, { recursive: true });
+	}
+
+	const triggerFile = path.join(triggersDir, `${scene}-${Date.now()}.json`);
+	writeFileSync(triggerFile, JSON.stringify({ scene }));
+	console.log(`Triggered scene "${scene}" on instance "${name}".`);
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 
@@ -452,6 +485,9 @@ async function main() {
 			break;
 		case "sync-commands":
 			await cmdSyncCommands(cmdArgs[0]);
+			break;
+		case "trigger":
+			await cmdTrigger(cmdArgs[0], cmdArgs[1]);
 			break;
 	}
 }
