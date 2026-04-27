@@ -852,6 +852,16 @@ export class PiDiscordDaemon {
 			]);
 			// Clear in-memory journal
 			route.journal.entries.length = 0;
+			
+			// Send separator message to channel
+			const channel = interaction.channel;
+			if (channel) {
+				await channel.send({
+					content: "---",
+					allowedMentions: { parse: [] },
+				});
+			}
+			
 			await interaction.reply({
 				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
 				ephemeral: true,
