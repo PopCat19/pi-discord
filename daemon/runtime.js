@@ -942,7 +942,7 @@ export class PiDiscordDaemon {
 			
 			// Trigger immediate processing
 			this.runInBackground("regenerate-queue", async () => {
-				await this.runQueueForRoute(route);
+				await this.scheduleWork();
 			});
 			return;
 		}
