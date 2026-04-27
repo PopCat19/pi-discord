@@ -27,6 +27,7 @@ const COMMANDS = {
 	"sync-commands": { args: ["name"], desc: "Sync slash commands to Discord" },
 	trigger: { args: ["name", "scene"], desc: "Trigger a scene manually" },
 	routes: { args: ["name", "days?"], desc: "List/wipe stale routes (days: 1/7/30/all)" },
+	halt: { args: ["name"], desc: "Halt all runs and clear queue (admin)" },
 };
 
 function printUsage() {
@@ -525,6 +526,56 @@ function cmdRoutes(name, days) {
 	console.log(`Wiped ${wiped} stale route(s).`);
 }
 
+function cmdHalt(name) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+
+	const routesDir = path.join(workspaceDir, "routes");
+	if (!existsSync(routesDir)) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const routeDirs = readdirSync(routesDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.map(d => d.name);
+
+	if (routeDirs.length === 0) {
+		console.log("No routes found.");
+		return;
+	}
+
+	let halted = 0;
+	for (const routeSlug of routeDirs) {
+		const queuePath = path.join(routesDir, routeSlug, "queue.json");
+		if (existsSync(queuePath)) {
+			try {
+				const queue = JSON.parse(readFileSync(queuePath, "utf8"));
+				queue.items = [];
+				writeFileSync(queuePath, JSON.stringify(queue));
+				halted++;
+			} catch {}
+		}
+	}
+
+	// Also trigger abort via signal if running
+	const { running, pid } = readStatus(workspaceDir);
+	if (running) {
+		// Sending SIGUSR1 to daemon to trigger global abort if we implement it, 
+		// but for now we just cleared the queues which stops further work.
+		// We could also just restart the instance.
+		console.log(`Queues cleared for ${halted} routes. Restarting instance to abort current runs...`);
+		cmdRestart(name);
+	} else {
+		console.log(`Queues cleared for ${halted} routes.`);
+	}
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 
@@ -600,6 +651,9 @@ async function main() {
 			break;
 		case "routes":
 			cmdRoutes(cmdArgs[0], cmdArgs[1]);
+			break;
+		case "halt":
+			await cmdHalt(cmdArgs[0]);
 			break;
 	}
 }

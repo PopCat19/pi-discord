@@ -229,6 +229,11 @@ export class RouteQueueStore {
 		if (changed) await this.save();
 	}
 
+	async clear() {
+		this.data.items = [];
+		await this.save();
+	}
+
 	async leaseNext(workerId, now = Date.now()) {
 		const item = this.data.items.find((entry) => entry.state === "queued");
 		if (!item) return undefined;

@@ -831,6 +831,36 @@ export class PiDiscordDaemon {
 			return;
 		}
 
+		if (subcommand === "halt") {
+			if (!authorization.canControl) {
+				await interaction.reply({
+					content: "Only admin Discord user ids may halt.",
+					ephemeral: true,
+				});
+				return;
+			}
+			const scope = this.resolveScopeFromChannel(
+				interaction.guildId ?? null,
+				interaction.channelId,
+				interaction.channel,
+			);
+			await this.abortRoute(scope.routeKey);
+			const route = await this.getExistingRoute(scope);
+			if (route) {
+				await route.queue.clear();
+				await interaction.reply({
+					content: `Halted route ${scope.routeKey} (aborted run + cleared queue).`,
+					ephemeral: true,
+				});
+			} else {
+				await interaction.reply({
+					content: `Route ${scope.routeKey} not found.`,
+					ephemeral: true,
+				});
+			}
+			return;
+		}
+
 		if (subcommand === "wipe") {
 			if (!authorization.canControl) {
 				await interaction.reply({
@@ -901,17 +931,28 @@ export class PiDiscordDaemon {
 			const messages = await channel.messages.fetch({ limit: 20 });
 			const lastBotMsg = messages.find(m => m.author.id === this.client.user.id);
 			
-			if (!lastBotMsg) {
+			// Find the last user message that triggered or should have triggered a response
+			const lastUserMsg = messages.find(m => !m.author.bot && m.id !== interaction.id);
+			
+			// If no bot message, we can still "regenerate" (generate for the first time) 
+			// if there's a recent user message that mentions the bot or was in DM
+			const isDm = !interaction.guildId;
+			const mentionsBot = lastUserMsg && (
+				lastUserMsg.mentions.users.has(this.client.user.id) ||
+				(lastUserMsg.guildId && lastUserMsg.mentions.roles?.some(role => 
+					this.client.user.id in (lastUserMsg.guild?.members.me?.roles.cache ?? {})
+				))
+			);
+
+			if (!lastBotMsg && !(lastUserMsg && (isDm || mentionsBot))) {
 				await interaction.reply({
-					content: "No bot message found to regenerate.",
+					content: "No bot message or recent mention found to regenerate.",
 					ephemeral: true,
 				});
 				return;
 			}
 			
 			// Check authorization: admin or original caller
-			// Find the last user message that triggered the bot response
-			const lastUserMsg = messages.find(m => !m.author.bot && m.id !== interaction.id);
 			const isOriginalCaller = lastUserMsg && lastUserMsg.author.id === interaction.user.id;
 			const canRegenerate = authorization.canControl || isOriginalCaller;
 			
@@ -924,7 +965,12 @@ export class PiDiscordDaemon {
 			}
 			
 			// Get the prompt from the last user message
-			const promptText = lastUserMsg?.content ?? "Continue.";
+			let rawText = lastUserMsg?.content ?? "Continue.";
+			if (mentionsBot) {
+				// Strip bot mention like in handleMessageCreate
+				rawText = rawText.replace(/<@!?(\d+)>/g, "").trim();
+			}
+			const promptText = rawText || "Continue.";
 			
 			// Queue regeneration
 			const queuedItem = await route.queue.enqueue({
@@ -937,12 +983,12 @@ export class PiDiscordDaemon {
 				payload: {
 					promptText,
 					attachments: [],
-					targetMessageId: lastBotMsg.id,
+					targetMessageId: lastBotMsg?.id,
 				},
 			});
 			
 			await interaction.reply({
-				content: "Regenerating response...",
+				content: lastBotMsg ? "Regenerating response..." : "Generating response for recent mention...",
 				ephemeral: true,
 			});
 			
