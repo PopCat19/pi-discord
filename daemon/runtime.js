@@ -921,7 +921,7 @@ export class PiDiscordDaemon {
 			const promptText = lastUserMsg?.content ?? "Continue.";
 			
 			// Queue regeneration
-			await route.queue.enqueue({
+			const queuedItem = await route.queue.enqueue({
 				source: {
 					kind: "regenerate",
 					sourceId: interaction.id,
@@ -943,6 +943,30 @@ export class PiDiscordDaemon {
 			// Trigger immediate processing
 			this.runInBackground("regenerate-queue", async () => {
 				await this.scheduleWork();
+			});
+			
+			// Wait for completion with 30s timeout
+			const startTime = Date.now();
+			const timeout = 30000;
+			let completed = false;
+			
+			this.runInBackground("regen-feedback", async () => {
+				while (Date.now() - startTime < timeout) {
+					const item = route.queue.list().find(i => i.id === queuedItem.id);
+					if (!item || item.state !== "queued") {
+						completed = true;
+						break;
+					}
+					await new Promise(r => setTimeout(r, 500));
+				}
+				
+				try {
+					if (completed) {
+						await interaction.editReply({ content: "Regenerated." });
+					} else {
+						await interaction.editReply({ content: "Check status" });
+					}
+				} catch {}
 			});
 			return;
 		}
