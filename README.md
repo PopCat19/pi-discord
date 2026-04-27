@@ -87,13 +87,16 @@ The `pi-discord` CLI manages multiple bot instances:
 ```
 pi-discord create <name> [--needed]  Create new instance
 pi-discord list                 List all instances
-pi-discord start <name>        Start an instance
-pi-discord stop <name>         Stop an instance
-pi-discord restart <name>      Restart an instance
+pi-discord start <name...>     Start one or more instances
+pi-discord stop <name...>      Stop one or more instances
+pi-discord restart <name...>   Restart one or more instances
 pi-discord status [name]       Show instance status
 pi-discord edit <name>         Open config in $EDITOR
 pi-discord remove <name>       Delete an instance
 pi-discord migrate <name>      Migrate legacy instance
+pi-discord sync-commands <name> Sync slash commands
+pi-discord trigger <name> <scene> Trigger a scene manually
+pi-discord routes <name> [days] List/wipe stale routes
 ```
 
 **Instance storage:**
@@ -286,12 +289,20 @@ Current fields:
 - `defaultModel`: optional `provider/model-id` for new routes
 - `defaultThinkingLevel`: Pi thinking level for new routes
 - `systemPrompt`: optional system prompt override for routes without a specified agent
+- `systemPromptFile`: path to system prompt file (relative to config directory). Contents loaded at startup, overrides `systemPrompt`. Useful for long prompts.
 - `useThreadPersona`: if `true`, discard default Pi persona and let thread history define the persona for Pi tasks (git status, etc.)
 - `toolPermissions`: tool access control configuration
   - `adminOnly`: array of tool names restricted to admin users (default: `["bash", "edit", "write"]`)
   - `disabled`: array of tool names disabled for all users (default: `[]`)
 - `agents`: map of agent name to agent definition (see Agent System below)
 - `defaultAgent`: name of the default agent to use. Defaults to `"default"`
+- `sliceOfLife`: optional slice-of-life orchestrator config for ambient bot interactions (see Slice of Life below)
+- `routeCleanup`: auto-cleanup config for stale routes
+  - `enabled`: if `true`, enables auto-cleanup
+  - `maxAgeDays`: routes older than this are cleaned (default: 30)
+  - `onStartup`: if `true`, run cleanup on bot start (default: true)
+- `presence`: presence manager config for scheduled status changes
+- `botFollowup`: config for bot-to-bot followup messages
 
 ## Agent system
 
@@ -335,10 +346,13 @@ If no agent is specified or `defaultAgent` is not configured, routes use the top
 
 Inside Discord, the package currently supports these slash subcommands under whatever `commandName` is configured:
 
-- `/pi ask text:"..."`
-- `/pi status`
-- `/pi stop`
-- `/pi reset`
+- `/<command> ask text:"..."` - Send a prompt (ephemeral feedback)
+- `/<command> status` - Show route queue status
+- `/<command> stop` - Stop the active route run
+- `/<command> reset` - Reset the current route session
+- `/<command> wipe` - Full wipe: session + journal + memory
+- `/<command> regen` - Regenerate the last bot response
+- `/<command> routes [wipe]` - List routes or wipe stale ones (admin only)
 
 In addition, a direct mention (user or role) in a guild channel or a DM from an allowlisted user will enqueue work for the current route. Role mentions require the bot to have the role assigned; the bot checks `message.mentions.roles` for roles it possesses.
 
@@ -389,12 +403,42 @@ Each route owns:
 - a route manifest
 - a durable queue
 - an append-only transport journal
-- a route memory file
+- a compressing memory file (routes older than 8192 tokens are summarized)
 - a session storage directory
 - inbound and outbound attachment folders
 - an execution root
 
-By default, each route gets a persistent Pi session. The route manifest keeps the stable mapping between the route key and the current session file, plus message/thread ids used for outbound rendering.
+### Route memory
+
+Routes use a compressing memory system that automatically summarizes old conversations:
+
+- **Recent entries**: Full conversation turns (limited by token count)
+- **Compressed entries**: Summaries of older conversations
+- **Auto-rotation**: When memory exceeds 8192 tokens, oldest conversations are compressed
+
+**`/pi wipe`** clears the entire memory, including summaries. **`/pi reset`** only ends the current session while preserving memory.
+
+### Stale route cleanup
+
+Routes can accumulate over time. Use `pi-discord routes` to manage:
+
+```bash
+pi-discord routes plana           # List all routes
+pi-discord routes plana 30        # Wipe routes older than 30 days
+pi-discord routes plana all       # Wipe all routes
+```
+
+Or enable auto-cleanup in config:
+
+```json
+"routeCleanup": {
+  "enabled": true,
+  "maxAgeDays": 30,
+  "onStartup": true
+}
+```
+
+This automatically deletes routes with no activity for the specified days on startup. The route manifest keeps the stable mapping between the route key and the current session file, plus message/thread ids used for outbound rendering.
 
 ## Session behavior
 
