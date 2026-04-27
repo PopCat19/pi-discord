@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ensureDir, readJson, writeJson } from "../lib/fs.js";
+import { ensureDir, readJson, removeIfExists, writeJson } from "../lib/fs.js";
 import { getRoutePaths } from "../lib/paths.js";
 
 /**
@@ -138,6 +138,13 @@ export class RouteRegistry {
 			routeKey: manifest.routeKey,
 			scope: manifest.scope,
 		};
+		await this.save();
+	}
+
+	async deleteManifest(routeKey) {
+		const routePaths = getRoutePaths(this.paths, routeKey);
+		await removeIfExists(routePaths.routeDir);
+		delete this.registry.routes[routeKey];
 		await this.save();
 	}
 }

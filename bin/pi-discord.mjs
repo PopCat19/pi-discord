@@ -26,6 +26,7 @@ const COMMANDS = {
 	migrate: { args: ["name"], desc: "Migrate legacy instance to new location" },
 	"sync-commands": { args: ["name"], desc: "Sync slash commands to Discord" },
 	trigger: { args: ["name", "scene"], desc: "Trigger a scene manually" },
+	routes: { args: ["name", "days?"], desc: "List/wipe stale routes (days: 1/7/30/all)" },
 };
 
 function printUsage() {
@@ -437,6 +438,93 @@ async function cmdTrigger(name, scene) {
 	console.log(`Triggered scene "${scene}" on instance "${name}".`);
 }
 
+function cmdRoutes(name, days) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+
+	const routesDir = path.join(workspaceDir, "routes");
+	if (!existsSync(routesDir)) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const routeDirs = readdirSync(routesDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.map(d => d.name);
+
+	if (routeDirs.length === 0) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const now = Date.now();
+	const staleRoutes = [];
+
+	for (const routeSlug of routeDirs) {
+		const manifestPath = path.join(routesDir, routeSlug, "manifest.json");
+		let lastActivity = 0;
+
+		try {
+			const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+
+			// Check journal for last activity
+			const journalPath = path.join(routesDir, routeSlug, "journal.jsonl");
+			if (existsSync(journalPath)) {
+				const journalContent = readFileSync(journalPath, "utf8");
+				const entries = journalContent.trim().split("\n").filter(Boolean);
+				for (const line of entries) {
+					try {
+						const entry = JSON.parse(line);
+						if (entry.timestamp && entry.timestamp > lastActivity) {
+							lastActivity = entry.timestamp;
+						}
+					} catch {}
+				}
+			}
+		} catch {}
+
+		const daysSinceActive = (now - lastActivity) / (1000 * 60 * 60 * 24);
+
+		if (days && (days === "all" || daysSinceActive >= parseInt(days))) {
+			staleRoutes.push({ routeSlug, lastActivity, daysSinceActive });
+		}
+	}
+
+	if (!days) {
+		// List routes
+		console.log(`Routes (${routeDirs.length}):`);
+		for (const routeSlug of routeDirs.slice(0, 20)) {
+			console.log(`  ${routeSlug.split("root")[0] || routeSlug}`);
+		}
+		if (routeDirs.length > 20) {
+			console.log(`  ... and ${routeDirs.length - 20} more`);
+		}
+		return;
+	}
+
+	if (staleRoutes.length === 0) {
+		console.log(`No stale routes found (older than ${days === "all" ? "any time" : `${days} days`}).`);
+		return;
+	}
+
+	// Wipe stale routes
+	let wiped = 0;
+	for (const { routeSlug } of staleRoutes) {
+		const routeDir = path.join(routesDir, routeSlug);
+		try {
+			rmSync(routeDir, { recursive: true, force: true });
+			wiped++;
+		} catch {}
+	}
+
+	console.log(`Wiped ${wiped} stale route(s).`);
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 
@@ -509,6 +597,9 @@ async function main() {
 			break;
 		case "trigger":
 			await cmdTrigger(cmdArgs[0], cmdArgs[1]);
+			break;
+		case "routes":
+			cmdRoutes(cmdArgs[0], cmdArgs[1]);
 			break;
 	}
 }

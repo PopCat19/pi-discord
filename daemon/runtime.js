@@ -971,7 +971,97 @@ export class PiDiscordDaemon {
 			return;
 		}
 
-		if (subcommand !== "ask") return;
+		if (subcommand === "routes") {
+			if (!authorization.canControl) {
+				await interaction.reply({
+					content: "Only admin Discord user ids may manage routes.",
+					ephemeral: true,
+				});
+				return;
+			}
+
+			const wipeOption = interaction.options.getString("wipe");
+			const routes = await this.registry.load();
+			const routeList = Object.entries(routes);
+
+			if (routeList.length === 0) {
+				await interaction.reply({
+					content: "No routes found.",
+					ephemeral: true,
+				});
+				return;
+			}
+
+			// Filter stale routes if wipe option specified
+			const now = Date.now();
+			const staleRoutes = [];
+
+			for (const [routeKey, route] of routeList) {
+				const manifest = await this.registry.loadManifest(routeKey);
+				if (!manifest) continue;
+
+				// Check last activity from manifest
+				let lastActivity = 0;
+				try {
+					const routePaths = getRoutePaths(this.paths, routeKey);
+					const journal = new JournalStore(routePaths.journalPath);
+					await journal.load();
+					const entries = journal.list();
+					if (entries.length > 0) {
+						lastActivity = Math.max(...entries.map(e => e.timestamp || 0));
+					}
+				} catch {}
+
+				const daysSinceActive = (now - lastActivity) / (1000 * 60 * 60 * 24);
+				const isStale = wipeOption === "all" ||
+					(wipeOption && daysSinceActive >= parseInt(wipeOption));
+
+				if (isStale) {
+					staleRoutes.push({ routeKey, lastActivity, daysSinceActive });
+				}
+			}
+
+			if (!wipeOption) {
+				// Just list routes
+				const lines = routeList.map(([key, route]) => {
+					const scope = route.scope;
+					const location = scope.guildId ? `guild/${scope.guildId}` : "DM";
+					const channel = scope.channelId;
+					return `${key.split("root")[0] || key} (${location} ${channel})`;
+				});
+				await interaction.reply({
+					content: `**Routes (${routeList.length})**:\n${lines.slice(0, 20).join("\n")}${lines.length > 20 ? `\n... and ${lines.length - 20} more` : ""}`,
+					ephemeral: true,
+				});
+				return;
+			}
+
+			if (staleRoutes.length === 0) {
+				await interaction.reply({
+					content: `No stale routes found (older than ${wipeOption === "all" ? "any time" : `${wipeOption} days`}).`,
+					ephemeral: true,
+				});
+				return;
+			}
+
+			// Wipe stale routes
+			let wiped = 0;
+			for (const { routeKey } of staleRoutes) {
+				try {
+					await this.abortRoute(routeKey);
+					await this.registry.deleteManifest(routeKey);
+					wiped++;
+				} catch {}
+			}
+
+			await interaction.reply({
+				content: `Wiped ${wiped} stale route(s).`,
+				ephemeral: true,
+			});
+			return;
+		}
+
+		if (subcommand !== "ask" && subcommand !== "routes") return;
 
 		const rawText = interaction.options.getString("text", true).trim();
 		const scope = this.resolveScopeFromChannel(
