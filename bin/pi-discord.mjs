@@ -201,7 +201,7 @@ async function cmdStart(name) {
 
 	// Sync slash commands if configured
 	try {
-		const config = loadConfig(getPaths({ workspaceDir }));
+		const config = await loadConfig(getPaths({ workspaceDir }));
 		if (config.syncCommandsOnStart) {
 			const canSync = config.registerCommandsGlobally || config.allowedGuildIds.length > 0;
 			if (canSync) {
