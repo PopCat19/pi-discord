@@ -32,7 +32,8 @@ function printUsage() {
 	const maxCmdLen = Math.max(...Object.keys(COMMANDS).map(c => c.length));
 	for (const [cmd, info] of Object.entries(COMMANDS)) {
 		const args = info.args.map(a => a.endsWith("?") ? `[${a}]` : `<${a}>`).join(" ");
-		console.log(`  ${cmd.padEnd(maxCmdLen + 2)} ${args}  ${info.desc}`);
+		const flags = cmd === "create" ? " [--needed]" : "";
+		console.log(`  ${cmd.padEnd(maxCmdLen + 2)} ${args}${flags}  ${info.desc}`);
 	}
 	console.log("\nInstances are stored in: " + instancesDir);
 }
@@ -122,13 +123,17 @@ function readStatus(workspaceDir) {
 	return result;
 }
 
-function cmdCreate(name) {
+function cmdCreate(name, options = {}) {
 	ensureInstancesDir();
 	const instanceDir = getInstanceDir(name);
 	const workspaceDir = path.join(instanceDir, "workspace");
 	const configFile = path.join(workspaceDir, "config.json");
 
 	if (existsSync(instanceDir)) {
+		if (options.needed) {
+			console.log(`Instance "${name}" already exists at ${instanceDir}`);
+			return;
+		}
 		console.error(`Instance "${name}" already exists at ${instanceDir}`);
 		process.exit(1);
 	}
@@ -363,7 +368,17 @@ async function main() {
 		process.exit(args.length === 0 ? 1 : 0);
 	}
 
-	const [cmd, ...cmdArgs] = args;
+	// Parse flags
+	const flags = { needed: false };
+	const filteredArgs = args.filter(arg => {
+		if (arg === "--needed") {
+			flags.needed = true;
+			return false;
+		}
+		return true;
+	});
+
+	const [cmd, ...cmdArgs] = filteredArgs;
 
 	if (!COMMANDS[cmd]) {
 		console.error(`Unknown command: ${cmd}`);
@@ -380,7 +395,7 @@ async function main() {
 
 	switch (cmd) {
 		case "create":
-			cmdCreate(cmdArgs[0]);
+			cmdCreate(cmdArgs[0], flags);
 			break;
 		case "list":
 			cmdList();
