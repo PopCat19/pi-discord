@@ -39,14 +39,20 @@ export function buildPromptText(input) {
 }
 
 /**
- * @param {{ memoryPath: string, journal: import('./journal.js').JournalStore, excludeSourceId?: string }} input
+ * @param {{ memory?: { getContext: () => string }, memoryPath?: string, journal: import('./journal.js').JournalStore, excludeSourceId?: string }} input
  */
 export async function buildInjectedContext(input) {
 	let memoryText = "";
-	try {
-		memoryText = await readFile(input.memoryPath, "utf8");
-	} catch (error) {
-		if (error?.code !== "ENOENT") throw error;
+	
+	// Use ChannelMemory if available, otherwise fall back to file
+	if (input.memory) {
+		memoryText = input.memory.getContext();
+	} else if (input.memoryPath) {
+		try {
+			memoryText = await readFile(input.memoryPath, "utf8");
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+		}
 	}
 
 	const recentMessages = input.journal

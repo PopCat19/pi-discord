@@ -10,6 +10,7 @@ import { pathExists } from "../lib/fs.js";
 import { createHeadlessUi } from "./headless-ui.js";
 import { buildInjectedContext } from "./prompt-shaper.js";
 import { createRouteSessionExtension } from "./session-extension.js";
+import { ChannelMemory } from "../lib/channel-memory.js";
 
 export class RouteSessionHost {
 	/**
@@ -32,6 +33,7 @@ export class RouteSessionHost {
 		this.manifest = options.manifest;
 		this.routePaths = options.routePaths;
 		this.journal = options.journal;
+		this.memory = options.memory;
 		this.logger = options.logger;
 		this.uploadFile = options.uploadFile;
 		this.addReaction = options.addReaction;
@@ -111,6 +113,7 @@ export class RouteSessionHost {
 				createRouteSessionExtension({
 					getInjectedContext: () =>
 						buildInjectedContext({
+							memory: this.memory,
 							memoryPath: this.manifest.memoryPath,
 							journal: this.journal,
 							excludeSourceId: this.currentSourceId,

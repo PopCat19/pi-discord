@@ -19,6 +19,7 @@ import {
 import { ensureDir, pathExists, removeIfExists, writeJson } from "../lib/fs.js";
 import { getRoutePaths } from "../lib/paths.js";
 import { authorizeInteraction } from "./authz.js";
+import { ChannelMemory } from "../lib/channel-memory.js";
 import { JournalStore } from "./journal.js";
 import { Logger } from "./logger.js";
 import { SliceOfLifeOrchestrator } from "./orchestrator.js";
@@ -467,6 +468,10 @@ export class PiDiscordDaemon {
 		await queue.recoverExpiredLeases();
 		const journal = new JournalStore(routePaths.journalPath);
 		await journal.load();
+		const memory = new ChannelMemory({
+			path: routePaths.sharedMemoryPath.replace(".md", ".json"),
+			maxTokens: 8192,
+		});
 		const renderer = new DiscordRenderer({
 			client: this.client,
 			manifest,
@@ -483,6 +488,7 @@ export class PiDiscordDaemon {
 			manifest,
 			routePaths,
 			journal,
+			memory,
 			logger: this.logger,
 			uploadFile: (filePath, options) => renderer.uploadFile(filePath, options),
 			addReaction: async (emoji) => {
@@ -520,7 +526,7 @@ export class PiDiscordDaemon {
 			},
 		});
 
-		const context = { manifest, routePaths, queue, journal, renderer, host };
+		const context = { manifest, routePaths, queue, journal, memory, renderer, host };
 		this.routeContexts.set(scope.routeKey, context);
 		this.runInBackground("status-write-failed", async () => {
 			await this.writeStatus();
@@ -993,6 +999,13 @@ export class PiDiscordDaemon {
 			authorName: interaction.user.displayName,
 		});
 
+		// Also append to compressed memory
+		if (route.memory) {
+			route.memory.append({
+				turns: [{ speaker: interaction.user.displayName ?? "user", text: rawText }],
+			});
+		}
+
 		await route.queue.enqueue({
 			source: {
 				kind: "interaction",
@@ -1234,6 +1247,13 @@ export class PiDiscordDaemon {
 				sourceId: leasedItem.id,
 				text: assistantText,
 			});
+			
+			// Also append to compressed memory
+			if (route.memory && assistantText.trim()) {
+				route.memory.append({
+					turns: [{ speaker: "assistant", text: assistantText }],
+				});
+			}
 		} catch (error) {
 			const text = String(error);
 			const nextState = /abort/i.test(text) ? "cancelled" : "failed";
