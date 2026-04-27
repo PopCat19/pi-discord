@@ -154,22 +154,26 @@ export class PiDiscordDaemon {
 
 	attachEventHandlers() {
 		this.client.once(Events.ClientReady, async (client) => {
-			await this.logger.info("discord-ready", {
-				userId: client.user.id,
-				tag: client.user.tag,
-			});
-			await this.writeStatus({ phase: "ready", userTag: client.user.tag });
-			await this.reconcileKnownRoutes();
-			await this.scheduleWork();
-			
-			// Initialize orchestrator if configured
-			if (this.config.sliceOfLife?.enabled) {
-				await this.initOrchestrator();
-			}
+			try {
+				await this.logger.info("discord-ready", {
+					userId: client.user.id,
+					tag: client.user.tag,
+				});
+				await this.writeStatus({ phase: "ready", userTag: client.user.tag });
+				await this.reconcileKnownRoutes();
+				await this.scheduleWork();
+				
+				// Initialize orchestrator if configured
+				if (this.config.sliceOfLife?.enabled) {
+					await this.initOrchestrator();
+				}
 
-			// Initialize presence manager if configured
-			if (this.config.presence?.enabled) {
-				await this.initPresenceManager();
+				// Initialize presence manager if configured
+				if (this.config.presence?.enabled) {
+					await this.initPresenceManager();
+				}
+			} catch (err) {
+				await this.logger.error("client-ready-error", { error: String(err) });
 			}
 		});
 
