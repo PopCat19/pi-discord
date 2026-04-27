@@ -875,7 +875,7 @@ export class PiDiscordDaemon {
 			return;
 		}
 
-		if (subcommand === "regenerate") {
+		if (subcommand === "regen") {
 			const scope = this.resolveScopeFromChannel(
 				interaction.guildId ?? null,
 				interaction.channelId,
