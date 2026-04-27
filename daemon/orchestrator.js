@@ -57,6 +57,7 @@ export class SliceOfLifeOrchestrator {
 		this.logger = options.logger;
 		this.instanceName = options.instanceName;
 		this.presenceManager = options.presenceManager;
+		this.presenceConfig = options.presenceConfig;
 
 		this.memory = new ChannelMemory({
 			path: `${options.paths.workspaceDir}/../shared-routes/slice-of-life/memory.json`,
@@ -200,7 +201,7 @@ export class SliceOfLifeOrchestrator {
 	 */
 	async generatePresenceSchedule() {
 		const memory = this.memory.getContext();
-		const baseSchedule = this.config.presenceBase ?? this.getDefaultPresenceBase();
+		const baseSchedule = this.presenceConfig?.base ?? this.getDefaultPresenceBase();
 		const sceneEffects = this.getScenePresenceEffects();
 		
 		// Apply scene effects to base schedule
@@ -212,22 +213,6 @@ export class SliceOfLifeOrchestrator {
 			}
 			return marker;
 		});
-		
-		// Memory-based modifications
-		if (memory) {
-			const lastScene = this.state.lastScene;
-			// If late night scene ran, morning is different
-			if (lastScene && lastScene.includes("late")) {
-				const morningIdx = contextualSchedule.findIndex(m => m.name === "morning");
-				if (morningIdx >= 0) {
-					contextualSchedule[morningIdx] = {
-						...contextualSchedule[morningIdx],
-						activity: "Tired morning",
-						status: "idle",
-					};
-				}
-			}
-		}
 		
 		await this.logger.info("presence-schedule-generated", {
 			markers: contextualSchedule.map(m => m.name),
