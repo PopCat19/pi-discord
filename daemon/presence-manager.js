@@ -16,10 +16,16 @@ const STATE_FILE = "presence-state.json";
  */
 
 /**
+ * @typedef {Object} PresenceActivity
+ * @property {PresenceStatus} status
+ * @property {string} [activity]
+ */
+
+/**
  * @typedef {Object} PresenceConfig
  * @property {string} [timezone="America/New_York"] - Timezone for schedule
- * @property {string} [refreshTime="00:00"] - Time to regenerate schedule
- * @property {PresenceMarker[]} markers - Presence markers
+ * @property {PresenceMarker[]} [base] - Base schedule markers (time-based)
+ * @property {Record<string, PresenceActivity>} [activities] - Named activities for dynamic use
  */
 
 /**
@@ -31,13 +37,20 @@ const STATE_FILE = "presence-state.json";
  * @property {PresenceMarker[]} schedule - Current day's schedule
  */
 
-const DEFAULT_MARKERS = [
+const DEFAULT_BASE = [
 	{ name: "sleep", status: "idle", activity: "Sleeping", time: "00:00" },
 	{ name: "morning", status: "online", activity: "Good morning", time: "07:00" },
 	{ name: "work", status: "dnd", activity: "Working", time: "09:00" },
 	{ name: "free", status: "online", activity: "Free time", time: "17:00" },
 	{ name: "evening", status: "idle", activity: "Winding down", time: "22:00" },
 ];
+
+const DEFAULT_ACTIVITIES = {
+	processing: { status: "online", activity: "Processing" },
+	thinking: { status: "dnd", activity: "Thinking" },
+	reading: { status: "idle", activity: "Reading" },
+	discussing: { status: "online", activity: "Discussing" },
+};
 
 export class PresenceManager {
 	/**
@@ -55,6 +68,57 @@ export class PresenceManager {
 		this.state = this.loadState();
 		this.checkInterval = null;
 		this.refreshTimeout = null;
+		
+		// Dynamic presence state (overrides schedule)
+		this.dynamicMarker = null;
+		this.dynamicTimeout = null;
+	}
+
+	/**
+	 * Set activity by name (looks up from config.activities).
+	 * @param {string} name - Activity name (e.g., "processing", "thinking")
+	 * @param {Object} [options]
+	 * @param {number} [options.ttl=60000] - Time until auto-clear (ms)
+	 */
+	async setActivity(name, { ttl = 60000 } = {}) {
+		const activities = this.config.activities ?? DEFAULT_ACTIVITIES;
+		const activity = activities[name];
+		
+		if (!activity) {
+			await this.logger.warn("presence-activity-not-found", { name });
+			return;
+		}
+		
+		if (this.dynamicTimeout) {
+			clearTimeout(this.dynamicTimeout);
+		}
+		
+		this.dynamicMarker = { name, ...activity };
+		await this.updatePresence(this.dynamicMarker);
+		
+		// Auto-clear after TTL
+		this.dynamicTimeout = setTimeout(() => {
+			this.clear().catch(() => {});
+		}, ttl);
+	}
+	
+	/**
+	 * Clear dynamic presence, return to schedule.
+	 */
+	async clear() {
+		if (this.dynamicTimeout) {
+			clearTimeout(this.dynamicTimeout);
+			this.dynamicTimeout = null;
+		}
+		
+		this.dynamicMarker = null;
+		
+		// Apply current schedule marker
+		const schedule = this.state.schedule.length > 0
+			? this.state.schedule
+			: this.generateSchedule();
+		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
+		await this.updatePresence(marker);
 	}
 
 	loadState() {
@@ -87,13 +151,8 @@ export class PresenceManager {
 	 * Generate a new presence schedule for the day.
 	 */
 	generateSchedule() {
-		const markers = this.config.markers ?? DEFAULT_MARKERS;
-		const schedule = [...markers];
-
-		// Shuffle markers slightly for variety (optional)
-		// For now, use markers as-is
-
-		return schedule;
+		const base = this.config.base ?? DEFAULT_BASE;
+		return [...base];
 	}
 
 	/**
@@ -168,16 +227,19 @@ export class PresenceManager {
 				await this.client.user.setActivity(marker.activity, { type: 0 });
 			}
 
-			this.state.currentMarker = marker.name;
-			this.state.currentStatus = status;
-			this.state.currentActivity = marker.activity;
-			await this.saveState();
+			// Only update state for schedule markers (not dynamic)
+			if (!this.dynamicMarker) {
+				this.state.currentMarker = marker.name;
+				this.state.currentStatus = status;
+				this.state.currentActivity = marker.activity;
+				await this.saveState();
+			}
 
 			await this.logger.info("presence-updated", {
-				marker: marker.name,
+				marker: marker.name ?? "dynamic",
 				status,
 				activity: marker.activity,
-			});
+		});
 		} catch (err) {
 			await this.logger.error("presence-update-failed", { error: String(err) });
 		}
@@ -187,6 +249,9 @@ export class PresenceManager {
 	 * Check and update presence based on schedule.
 	 */
 	async checkAndUpdatePresence() {
+		// Skip if dynamic presence is active
+		if (this.dynamicMarker) return;
+		
 		// Refresh schedule if new day
 		if (this.needsRefresh()) {
 			this.state.schedule = this.generateSchedule();
@@ -270,6 +335,10 @@ export class PresenceManager {
 		if (this.refreshTimeout) {
 			clearTimeout(this.refreshTimeout);
 			this.refreshTimeout = null;
+		}
+		if (this.dynamicTimeout) {
+			clearTimeout(this.dynamicTimeout);
+			this.dynamicTimeout = null;
 		}
 	}
 

@@ -163,15 +163,15 @@ export class PiDiscordDaemon {
 				await this.reconcileKnownRoutes();
 				await this.scheduleWork();
 				
-				// Initialize orchestrator if configured
-				if (this.config.sliceOfLife?.enabled) {
-					await this.initOrchestrator();
-				}
-
 				// Initialize presence manager if configured
 				if (this.config.presence?.enabled) {
 					await this.initPresenceManager();
 				}
+
+				// Initialize orchestrator if configured
+				if (this.config.sliceOfLife?.enabled) {
+					await this.initOrchestrator();
+			}
 			} catch (err) {
 				await this.logger.error("client-ready-error", { error: String(err) });
 			}
@@ -1022,6 +1022,9 @@ export class PiDiscordDaemon {
 		let assistantText = "";
 
 		try {
+			// Set dynamic presence while processing
+			await this.presenceManager?.setActivity("processing", { ttl: 300000 });
+			
 			await route.queue.markRunning(leasedItem.id);
 			route.host.currentSourceId = leasedItem.source.sourceId;
 			const session = await route.host.ensureSession();
@@ -1152,6 +1155,9 @@ export class PiDiscordDaemon {
 			route.host.currentSourceId = undefined;
 			if (heartbeat) clearInterval(heartbeat);
 			unsubscribe();
+			
+			// Clear dynamic presence, return to schedule
+			await this.presenceManager?.clear();
 		}
 	}
 
@@ -1257,7 +1263,8 @@ export class PiDiscordDaemon {
 			paths: this.paths,
 			logger: this.logger,
 			instanceName,
-		});
+			presenceManager: this.presenceManager,
+		});;
 
 		await this.orchestrator.start();
 		await this.logger.info("orchestrator-initialized", {

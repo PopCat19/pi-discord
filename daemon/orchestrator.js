@@ -56,6 +56,7 @@ export class SliceOfLifeOrchestrator {
 		this.paths = options.paths;
 		this.logger = options.logger;
 		this.instanceName = options.instanceName;
+		this.presenceManager = options.presenceManager;
 
 		this.memory = new ChannelMemory({
 			path: `${options.paths.workspaceDir}/../shared-routes/slice-of-life/memory.json`,
@@ -330,6 +331,11 @@ export class SliceOfLifeOrchestrator {
 		});
 
 		try {
+			// Set dynamic presence for scene
+			if (this.presenceManager && scene?.presence) {
+				await this.presenceManager.setActivity(scene.presence, { ttl: 120000 });
+			}
+
 			// Get channel
 			const channel = await this.discordClient.channels.fetch(this.config.channelId);
 			if (!channel || !channel.isTextBased()) {
@@ -371,7 +377,11 @@ export class SliceOfLifeOrchestrator {
 				sceneName,
 				contentLength: content.length,
 			});
+			
+			// Clear dynamic presence, return to schedule
+			await this.presenceManager?.clear();
 		} catch (error) {
+			await this.presenceManager?.clear();
 			await this.logger.error("scene-failed", {
 				sceneName,
 				error: String(error),
