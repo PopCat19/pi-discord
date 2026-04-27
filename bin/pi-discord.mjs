@@ -12,7 +12,6 @@ const packageRoot = path.dirname(fileURLToPath(new URL("../package.json", import
 const agentDir = path.join(homedir(), ".pi", "agent");
 const instancesDir = path.join(agentDir, "pi-discord-instances");
 const legacyDir = path.join(agentDir, "pi-discord"); // Old single-instance location
-const defaultInstance = "plana";
 
 const COMMANDS = {
 	create: { args: ["name"], desc: "Create a new instance with default config" },
@@ -23,7 +22,7 @@ const COMMANDS = {
 	status: { args: ["name?"], desc: "Show status of instance(s)" },
 	edit: { args: ["name"], desc: "Open instance config in editor" },
 	remove: { args: ["name"], desc: "Remove an instance (keeps workspace data)" },
-	migrate: { args: ["name?"], desc: "Migrate legacy instance to new location" },
+	migrate: { args: ["name"], desc: "Migrate legacy instance to new location" },
 };
 
 function printUsage() {
@@ -36,7 +35,6 @@ function printUsage() {
 		console.log(`  ${cmd.padEnd(maxCmdLen + 2)} ${args}  ${info.desc}`);
 	}
 	console.log("\nInstances are stored in: " + instancesDir);
-	console.log("Default instance: " + defaultInstance);
 }
 
 function getInstanceDir(name) {
@@ -319,12 +317,17 @@ function cmdMigrate(name) {
 		process.exit(1);
 	}
 
-	const targetName = name || defaultInstance;
-	const targetDir = getInstanceDir(targetName);
+	if (!name) {
+		console.error("Please specify a name for the migrated instance:");
+		console.error("  pi-discord migrate <name>");
+		console.error("\nExample: pi-discord migrate my-bot");
+		process.exit(1);
+	}
+
+	const targetDir = getInstanceDir(name);
 
 	if (existsSync(targetDir)) {
-		console.error(`Instance "${targetName}" already exists at ${targetDir}`);
-		console.error("Remove it first or choose a different name: pi-discord migrate <name>");
+		console.error(`Instance "${name}" already exists at ${targetDir}`);
 		process.exit(1);
 	}
 
@@ -334,21 +337,20 @@ function cmdMigrate(name) {
 		process.exit(1);
 	}
 
-	console.log(`Migrating legacy instance to "${targetName}"...`);
+	console.log(`Migrating legacy instance to "${name}"...`);
 	mkdirSync(instancesDir, { recursive: true });
 
-	// Create instance directory and move workspace
+	// Create instance directory and copy workspace
 	const workspaceDir = path.join(targetDir, "workspace");
 	mkdirSync(targetDir, { recursive: true });
 
-	// Copy the entire legacy directory as the workspace
 	const fs = require("fs");
 	fs.cpSync(legacyDir, workspaceDir, { recursive: true });
 
 	console.log(`Migrated to ${targetDir}`);
 	console.log("\nOriginal files preserved at: " + legacyDir);
-	console.log("To switch to the new instance, run:");
-	console.log(`  pi-discord start ${targetName}`);
+	console.log("To start the new instance:");
+	console.log(`  pi-discord start ${name}`);
 	console.log("\nOnce verified, you can remove the legacy directory:");
 	console.log(`  rm -rf ${legacyDir}`);
 }
