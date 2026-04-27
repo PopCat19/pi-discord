@@ -94,14 +94,15 @@ function listInstances() {
 function readStatus(workspaceDir) {
 	const paths = getPaths({ workspaceDir });
 	const statusPath = paths.statusPath;
-	const pidPath = paths.pidPath;
+	const lockPath = paths.lockPath;
 
 	const result = { running: false, pid: null, status: null };
 
-	if (existsSync(pidPath)) {
+	if (existsSync(lockPath)) {
 		try {
-			const pid = parseInt(readFileSync(pidPath, "utf8").trim(), 10);
-			if (!isNaN(pid)) {
+			const lockData = JSON.parse(readFileSync(lockPath, "utf8"));
+			const pid = lockData.pid;
+			if (pid && !isNaN(pid)) {
 				// Check if process is alive
 				try {
 					process.kill(pid, 0);
