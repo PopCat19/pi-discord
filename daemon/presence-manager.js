@@ -155,13 +155,18 @@ export class PresenceManager {
 		if (!this.client.user) return;
 
 		const status = marker.status ?? "online";
-		const activity = marker.activity ? { name: marker.activity, type: 0 } : undefined;
+		const activity = marker.activity ? [{ name: marker.activity, type: 0 }] : [];
 
 		try {
 			await this.client.user.setPresence({
 				status,
-				activities: activity ? [activity] : [],
+				activities: activity,
 			});
+
+			// Also set as a fallback using setActivity
+			if (marker.activity) {
+				await this.client.user.setActivity(marker.activity, { type: 0 });
+			}
 
 			this.state.currentMarker = marker.name;
 			this.state.currentStatus = status;
