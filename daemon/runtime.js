@@ -293,7 +293,10 @@ export class PiDiscordDaemon {
 					return;
 				await this.handleInteraction(interaction);
 			} catch (error) {
-				await this.logger.error("interaction-failed", { error: String(error) });
+				await this.logger.error("interaction-failed", {
+					error: error instanceof Error ? error.message : String(error),
+					stack: error instanceof Error ? error.stack : undefined,
+				});
 				if (interaction.isRepliable()) {
 					const responder =
 						interaction.deferred || interaction.replied
@@ -808,10 +811,6 @@ export class PiDiscordDaemon {
 			]);
 			// Clear in-memory journal
 			route.journal.entries.length = 0;
-			await interaction.reply({
-				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
-				ephemeral: true,
-			});
 			await interaction.reply({
 				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
 				ephemeral: true,
