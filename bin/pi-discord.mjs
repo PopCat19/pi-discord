@@ -184,7 +184,7 @@ function cmdList() {
 	}
 }
 
-function cmdStart(name) {
+async function cmdStart(name) {
 	let workspaceDir;
 	try {
 		workspaceDir = resolveWorkspace(name);
@@ -206,9 +206,8 @@ function cmdStart(name) {
 			const canSync = config.registerCommandsGlobally || config.allowedGuildIds.length > 0;
 			if (canSync) {
 				console.log("Syncing slash commands...");
-				syncSlashCommands(config).catch(err => {
-					console.error(`Slash command sync failed: ${err.message}`);
-				});
+				await syncSlashCommands(config);
+				console.log("Slash commands synced.");
 			}
 		}
 	} catch (err) {
@@ -248,7 +247,7 @@ function cmdStop(name) {
 	}
 }
 
-function cmdRestart(name) {
+async function cmdRestart(name) {
 	const workspaceDir = getInstancePath(name);
 	const { running, pid } = readStatus(workspaceDir);
 
@@ -271,7 +270,7 @@ function cmdRestart(name) {
 		} catch {}
 	}
 
-	cmdStart(name);
+	await cmdStart(name);
 }
 
 function cmdStatus(name) {
@@ -479,13 +478,13 @@ async function main() {
 			cmdList();
 			break;
 		case "start":
-			cmdStart(cmdArgs[0]);
+			cmdStart(cmdArgs[0]).catch(err => console.error(err.message));
 			break;
 		case "stop":
 			cmdStop(cmdArgs[0]);
 			break;
 		case "restart":
-			cmdRestart(cmdArgs[0]);
+			cmdRestart(cmdArgs[0]).catch(err => console.error(err.message));
 			break;
 		case "status":
 			cmdStatus(cmdArgs[0]);
