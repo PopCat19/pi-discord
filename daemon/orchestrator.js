@@ -9,22 +9,32 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @property {{ cron?: string, rng?: { chance: number, interval: number }, search?: { query: string, schedule: string } }} trigger
  * @property {string} speaker - Which instance speaks (e.g., instance name)
  * @property {string} prompt - Prompt for scene generation
+ * @property {string[]} [topics] - Pool of topics to rotate through
  * @property {number} [turns=1] - For future inter-bot scenes
+ * @property {boolean} [board] - Post to board channel instead of main channel
+ * @property {string} [presence] - Dynamic presence activity during scene
+ * @property {Object} [presenceEffect] - Persistent presence effect after scene
  */
 
 /**
  * @typedef {Object} SliceOfBreadConfig
  * @property {boolean} enabled
  * @property {string} channelId - Discord channel ID
+ * @property {string} [boardChannelId] - Board channel for Twitter-like posts
  * @property {string} primaryInstance - Which instance runs orchestrator
  * @property {SceneConfig[]} scenes
  * @property {number} [cooldown=3600000] - Min time between scenes (default 1h)
+ * @property {string[]} [globalTopics] - Shared topic pool for all scenes
+ * @property {number} [topicMemorySize=10] - How many recent topics to remember (default 10)
  * @property {Object} [botFollowup] - Bot message followup settings
  * @property {boolean} botFollowup.enabled - Enable responding to other bots
  * @property {number} [botFollowup.cooldown=60000] - Min time between bot responses (default 1m)
  * @property {string[]} botFollowup.responders - Instance names that can respond
  * @property {number} [botFollowup.chance=0.5] - Probability of responding (default 50%)
  * @property {string} [botFollowup.promptTemplate] - Prompt template with {speaker}, {content}
+ * @property {string} [memoryPath] - Custom memory file path
+ * @property {number} [memoryMaxTokens] - Max tokens before compression
+ * @property {number} [checkInterval] - RNG check interval in ms
  */
 
 /**
@@ -86,7 +96,7 @@ export class SliceOfBreadOrchestrator {
 				lastScene: undefined,
 				lastSceneTime: 0,
 				lastTriggers: {},
-				recentTopics: [],
+				recentTopics: [], // [{ topic, scene, timestamp }]
 			};
 		}
 	}
@@ -262,6 +272,94 @@ export class SliceOfBreadOrchestrator {
 	}
 
 	/**
+	 * Select a diverse topic for a scene.
+	 * Avoids recently used topics from the topic pool.
+	 * If no topic pool is defined, can generate one via AI.
+	 * @param {SceneConfig} scene
+	 * @returns {Promise<string | null>}
+	 */
+	async selectTopic(scene) {
+		// Get topic pool: scene-specific or global
+		const topicPool = scene.topics ?? this.config.globalTopics ?? [];
+
+		// If no pool and AI generation is enabled, let AI pick
+		if (topicPool.length === 0 && this.config.generateTopics && this.getSession) {
+			return await this.generateTopic(scene);
+		}
+
+		if (topicPool.length === 0) return null;
+
+		// Get recent topics to avoid
+		const memorySize = this.config.topicMemorySize ?? 10;
+		const recent = this.state.recentTopics
+			.slice(-memorySize)
+			.map(r => r.topic);
+
+		// Find topics not recently used
+		const available = topicPool.filter(t => !recent.includes(t));
+
+		// If all topics exhausted, use full pool (cycle reset)
+		const candidates = available.length > 0 ? available : topicPool;
+
+		// Pick random topic
+		const selected = candidates[Math.floor(Math.random() * candidates.length)];
+
+		// Track it
+		this.state.recentTopics.push({
+			topic: selected,
+			scene: scene.name,
+			timestamp: Date.now(),
+		});
+
+		// Trim to memory size
+		if (this.state.recentTopics.length > memorySize * 2) {
+			this.state.recentTopics = this.state.recentTopics.slice(-memorySize);
+		}
+
+		return selected;
+	}
+
+	/**
+	 * Generate a topic via AI based on scene and memory.
+	 * @param {SceneConfig} scene
+	 * @returns {Promise<string | null>}
+	 */
+	async generateTopic(scene) {
+		if (!this.getSession) return null;
+
+		const memoryContext = this.memory.getContext();
+		const recent = this.state.recentTopics.map(r => r.topic).slice(-5);
+
+		const prompt = [
+			`Scene: ${scene.name}`,
+			`Task: Generate ONE brief topic (2-5 words) for this scene.`,
+			recent.length > 0 ? `Avoid these recent topics: ${recent.join(", ")}` : null,
+			memoryContext ? `Context from memory:\n${memoryContext.slice(0, 500)}` : null,
+			"",
+			"Reply with ONLY the topic, nothing else.",
+		].filter(Boolean).join("\n");
+
+		try {
+			const session = await this.getSession();
+			const result = await session.send(prompt);
+			const topic = (typeof result === "string" ? result : result.text ?? "").trim().slice(0, 50);
+
+			if (topic) {
+				this.state.recentTopics.push({
+					topic,
+					scene: scene.name,
+					timestamp: Date.now(),
+				});
+				return topic;
+			}
+		} catch (err) {
+			await this.logger.error("topic-generation-failed", { error: String(err) });
+		}
+
+		return null;
+	}
+
+	/**
 	 * Call on day refresh to update presence schedule.
 	 */
 	async onDayRefresh() {
@@ -428,9 +526,10 @@ export class SliceOfBreadOrchestrator {
 				throw new Error(`Channel ${this.config.channelId} not found or not text-based`);
 			}
 
-			// Build prompt with memory context (or use custom prompt)
+			// Build prompt with memory context and topic (or use custom prompt)
 			const memoryContext = this.memory.getContext();
-			const fullPrompt = customPrompt ?? this.buildScenePrompt(scene, memoryContext);
+			const topic = scene ? await this.selectTopic(scene) : null;
+			const fullPrompt = customPrompt ?? this.buildScenePrompt(scene, memoryContext, topic);
 
 			// Generate or use template
 			let content;
@@ -449,7 +548,7 @@ export class SliceOfBreadOrchestrator {
 			// Log to memory
 			this.memory.append({
 				scene: sceneName,
-				topic: sceneName,
+				topic: topic ?? sceneName,
 				turns: [{ speaker, text: content }],
 			});
 
@@ -479,12 +578,18 @@ export class SliceOfBreadOrchestrator {
 	 * Build scene prompt with context.
 	 * @param {SceneConfig} scene
 	 * @param {string} memoryContext
+	 * @param {string | null} topic
 	 * @returns {string}
 	 */
-	buildScenePrompt(scene, memoryContext) {
+	buildScenePrompt(scene, memoryContext, topic = null) {
 		const lines = [];
 
 		lines.push(`Scene: ${scene.name}`);
+				
+		if (topic) {
+			lines.push(`Topic: ${topic}`);
+		}
+
 		lines.push(`Instruction: ${scene.prompt}`);
 		lines.push("");
 
