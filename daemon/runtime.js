@@ -845,7 +845,7 @@ export class PiDiscordDaemon {
 			route.manifest.sessionFile = undefined;
 			await this.registry.saveManifest(route.manifest);
 			// Clear journal and memory for full context wipe
-			const routePaths = getRoutePaths(this.paths, route.manifest);
+			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
 			await Promise.all([
 				removeIfExists(routePaths.journalPath),
 				removeIfExists(routePaths.sharedMemoryPath),
