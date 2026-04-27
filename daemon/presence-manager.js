@@ -265,6 +265,22 @@ export class PresenceManager {
 	/**
 	 * Check and update presence based on schedule.
 	 */
+	/**
+	 * Force apply current presence to Discord (used on startup).
+	 */
+	async applyCurrentPresence() {
+		if (this.dynamicMarker) {
+			await this.updatePresence(this.dynamicMarker);
+			return;
+		}
+		
+		const schedule = this.state.schedule.length > 0
+			? this.state.schedule
+			: this.generateSchedule();
+		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
+		await this.updatePresence(marker);
+	}
+
 	async checkAndUpdatePresence() {
 		// Skip if dynamic presence is active
 		if (this.dynamicMarker) return;
@@ -300,8 +316,8 @@ export class PresenceManager {
 	 * Start the presence manager.
 	 */
 	start() {
-		// Initial update
-		this.checkAndUpdatePresence().catch(err =>
+		// Force initial presence update (always apply to Discord)
+		this.applyCurrentPresence().catch(err =>
 			this.logger.error("presence-initial-update-failed", { error: String(err) })
 		);
 
