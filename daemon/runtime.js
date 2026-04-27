@@ -1003,11 +1003,9 @@ export class PiDiscordDaemon {
 			savedAttachments: [],
 		});
 
-		await interaction.deferReply({ ephemeral: false });
+		await interaction.deferReply({ ephemeral: true });
 		const reply = await interaction.editReply({
-			content: `Queued for <@${interaction.user.id}>`,
-			components: route.renderer.createStopRow(),
-			allowedMentions: { parse: [] },
+			content: "Processing...",
 		});
 		route.manifest.primaryMessageId = reply.id;
 		await this.registry.saveManifest(route.manifest);
@@ -1030,7 +1028,7 @@ export class PiDiscordDaemon {
 			});
 		}
 
-		await route.queue.enqueue({
+		const queuedItem = await route.queue.enqueue({
 			source: {
 				kind: "interaction",
 				sourceId: interaction.id,
@@ -1048,6 +1046,30 @@ export class PiDiscordDaemon {
 			},
 		});
 		await this.scheduleWork();
+		
+		// Wait for completion with 30s timeout
+		const startTime = Date.now();
+		const timeout = 30000;
+		let completed = false;
+		
+		this.runInBackground("ask-feedback", async () => {
+			while (Date.now() - startTime < timeout) {
+				const item = route.queue.list().find(i => i.id === queuedItem.id);
+				if (!item || item.state !== "queued") {
+					completed = true;
+					break;
+				}
+				await new Promise(r => setTimeout(r, 500));
+			}
+			
+			try {
+				if (completed) {
+					await interaction.editReply({ content: "Done." });
+				} else {
+					await interaction.editReply({ content: "Check status" });
+				}
+			} catch {}
+		});
 	}
 
 	async saveInboundAttachments(route, attachments, sourceId) {
