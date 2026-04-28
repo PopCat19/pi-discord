@@ -882,6 +882,116 @@ export class PiDiscordDaemon {
 			return;
 		}
 
+		if (subcommand === "backup") {
+			if (!authorization.canControl) {
+				await interaction.reply({
+					content: "Only admin Discord user ids may backup memory.",
+					ephemeral: true,
+				});
+				return;
+			}
+			const scope = this.resolveScopeFromChannel(
+				interaction.guildId ?? null,
+				interaction.channelId,
+				interaction.channel,
+			);
+			const route = await this.getExistingRoute(scope);
+			if (!route) {
+				await interaction.reply({
+					content: `Route ${scope.routeKey} has no saved state.`,
+					ephemeral: true,
+				});
+				return;
+			}
+			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+			const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
+			try {
+				// Backup memory file
+				if (await pathExists(routePaths.sharedMemoryPath)) {
+					const memoryContent = await readFile(routePaths.sharedMemoryPath, "utf8");
+					await writeFile(backupPath, memoryContent, "utf8");
+					await interaction.reply({
+						content: `Backed up memory to ${path.basename(backupPath)}.`,
+						ephemeral: true,
+					});
+				} else {
+					await interaction.reply({
+						content: "No memory file found to backup.",
+						ephemeral: true,
+					});
+				}
+			} catch (err) {
+				await interaction.reply({
+					content: `Backup failed: ${String(err)}`,
+					ephemeral: true,
+				});
+			}
+			return;
+		}
+
+		if (subcommand === "scrub") {
+			if (!authorization.canControl) {
+				await interaction.reply({
+					content: "Only admin Discord user ids may scrub memory.",
+					ephemeral: true,
+				});
+				return;
+			}
+			const doBackup = interaction.options.getBoolean("backup") ?? false;
+			const clearJournal = interaction.options.getBoolean("journal") ?? false;
+			const scope = this.resolveScopeFromChannel(
+				interaction.guildId ?? null,
+				interaction.channelId,
+				interaction.channel,
+			);
+			const route = await this.getExistingRoute(scope);
+			if (!route) {
+				await interaction.reply({
+					content: `Route ${scope.routeKey} has no saved state.`,
+					ephemeral: true,
+				});
+				return;
+			}
+			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
+			let message = "";
+			try {
+				// Optional backup
+				if (doBackup && (await pathExists(routePaths.sharedMemoryPath))) {
+					const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+					const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
+					const memoryContent = await readFile(routePaths.sharedMemoryPath, "utf8");
+					await writeFile(backupPath, memoryContent, "utf8");
+					message += `Backed up to ${path.basename(backupPath)}. `;
+				}
+				// Scrub memory
+				if (await pathExists(routePaths.sharedMemoryPath)) {
+					await writeFile(routePaths.sharedMemoryPath, "", "utf8");
+					message += "Memory cleared. ";
+				}
+				// Optional journal clear
+				if (clearJournal) {
+					await removeIfExists(routePaths.journalPath);
+					route.journal.entries.length = 0;
+					message += "Journal cleared.";
+				}
+				// Clear in-memory memory
+				if (route.memory) {
+					route.memory.clear();
+				}
+				await interaction.reply({
+					content: message || "Nothing to scrub.",
+					ephemeral: true,
+				});
+			} catch (err) {
+				await interaction.reply({
+					content: `Scrub failed: ${String(err)}`,
+					ephemeral: true,
+				});
+			}
+			return;
+		}
+
 		if (subcommand === "wipe") {
 			if (!authorization.canControl) {
 				await interaction.reply({

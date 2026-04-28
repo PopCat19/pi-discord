@@ -28,6 +28,8 @@ const COMMANDS = {
 	trigger: { args: ["name", "scene"], desc: "Trigger a scene manually" },
 	routes: { args: ["name", "days?"], desc: "List/wipe stale routes (days: 1/7/30/all)" },
 	halt: { args: ["name"], desc: "Halt all runs and clear queue (admin)" },
+	backup: { args: ["name", "route?"], desc: "Backup route memory (admin)" },
+	scrub: { args: ["name", "route?"], desc: "Scrub route memory, optionally backup first (admin)" },
 };
 
 function printUsage() {
@@ -576,6 +578,135 @@ function cmdHalt(name) {
 	}
 }
 
+function cmdBackup(name, routeKey) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+
+	const routesDir = path.join(workspaceDir, "routes");
+	if (!existsSync(routesDir)) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const routeDirs = readdirSync(routesDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.map(d => d.name);
+
+	if (routeDirs.length === 0) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+	if (routeKey) {
+		// Backup specific route
+		const routeSlug = routeKey.replace(/[:/]/g, "_");
+		const routeDir = path.join(routesDir, routeSlug);
+		if (!existsSync(routeDir)) {
+			console.error(`Route "${routeKey}" not found.`);
+			process.exit(1);
+		}
+		const memoryPath = path.join(routeDir, "route-memory.md");
+		if (!existsSync(memoryPath)) {
+			console.log("No memory file found for route.");
+			return;
+		}
+		const backupPath = path.join(routeDir, `memory-backup-${timestamp}.md`);
+		const content = readFileSync(memoryPath, "utf8");
+		writeFileSync(backupPath, content);
+		console.log(`Backed up memory to ${path.basename(backupPath)}`);
+	} else {
+		// Backup all routes
+		let backed = 0;
+		for (const routeSlug of routeDirs) {
+			const memoryPath = path.join(routesDir, routeSlug, "route-memory.md");
+			if (existsSync(memoryPath)) {
+				const backupPath = path.join(routesDir, routeSlug, `memory-backup-${timestamp}.md`);
+				const content = readFileSync(memoryPath, "utf8");
+				writeFileSync(backupPath, content);
+				backed++;
+			}
+		}
+		console.log(`Backed up ${backed} route memory file(s).`);
+	}
+}
+
+function cmdScrub(name, routeKey) {
+	let workspaceDir;
+	try {
+		workspaceDir = resolveWorkspace(name);
+	} catch (err) {
+		console.error(err.message);
+		process.exit(1);
+	}
+
+	const routesDir = path.join(workspaceDir, "routes");
+	if (!existsSync(routesDir)) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const routeDirs = readdirSync(routesDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.map(d => d.name);
+
+	if (routeDirs.length === 0) {
+		console.log("No routes found.");
+		return;
+	}
+
+	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+	if (routeKey) {
+		// Scrub specific route
+		const routeSlug = routeKey.replace(/[:/]/g, "_");
+		const routeDir = path.join(routesDir, routeSlug);
+		if (!existsSync(routeDir)) {
+			console.error(`Route "${routeKey}" not found.`);
+			process.exit(1);
+		}
+		const memoryPath = path.join(routeDir, "route-memory.md");
+		const journalPath = path.join(routeDir, "journal.jsonl");
+
+		// Backup first
+		if (existsSync(memoryPath)) {
+			const backupPath = path.join(routeDir, `memory-backup-${timestamp}.md`);
+			const content = readFileSync(memoryPath, "utf8");
+			writeFileSync(backupPath, content);
+			writeFileSync(memoryPath, "");
+			console.log(`Backed up and cleared memory for route "${routeKey}".`);
+		} else {
+			console.log("No memory file found for route.");
+		}
+
+		// Also clear journal if specified (for now always clear)
+		if (existsSync(journalPath)) {
+			rmSync(journalPath);
+			console.log("Journal cleared.");
+		}
+	} else {
+		// Scrub all routes
+		let scrubbed = 0;
+		for (const routeSlug of routeDirs) {
+			const memoryPath = path.join(routesDir, routeSlug, "route-memory.md");
+			if (existsSync(memoryPath)) {
+				const backupPath = path.join(routesDir, routeSlug, `memory-backup-${timestamp}.md`);
+				const content = readFileSync(memoryPath, "utf8");
+				writeFileSync(backupPath, content);
+				writeFileSync(memoryPath, "");
+				scrubbed++;
+			}
+		}
+		console.log(`Scrubbed ${scrubbed} route memory file(s) (backups created).`);
+	}
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 
@@ -654,6 +785,12 @@ async function main() {
 			break;
 		case "halt":
 			await cmdHalt(cmdArgs[0]);
+			break;
+		case "backup":
+			cmdBackup(cmdArgs[0], cmdArgs[1]);
+			break;
+		case "scrub":
+			cmdScrub(cmdArgs[0], cmdArgs[1]);
 			break;
 	}
 }
