@@ -1735,31 +1735,66 @@ export class PiDiscordDaemon {
 	 */
 	async handleBotFollowup(message) {
 		const config = this.config.botFollowup;
-		
+
 		// Check if bot is available for followup (online presence)
 		if (this.presenceManager) {
 			const info = this.presenceManager.getInfo();
 			if (info.status !== "online") return; // Skip if not available
 		}
-		
+
 		// Check cooldown
 		const cooldown = config.cooldown ?? 60000;
 		if (Date.now() - (this.lastBotFollowup ?? 0) < cooldown) return;
-		
-		// Check chance
-		if (Math.random() > (config.chance ?? 0.5)) return;
-		
-		// Only respond if this bot is in the allowed responders
-		const instanceTag = this.client.user?.tag?.split('#')[0] ?? 'unknown';
-		if (config.responders && !config.responders.includes(instanceTag.toLowerCase())) return;
-		
+
+		// Determine if this bot should respond
+		const instanceTag = this.client.user?.tag?.split('#')[0]?.toLowerCase() ?? 'unknown';
+		const responders = config.responders ?? [];
+		if (responders.length > 0 && !responders.includes(instanceTag)) return;
+
+		// Check for explicit mentions (name or patterns)
+		const content = message.content ?? "";
+		const mentionPatterns = config.mentionPatterns ?? [];
+		const isMentioned = mentionPatterns.some(pattern => {
+			try {
+				// Support /pattern/i format
+				if (pattern.startsWith('/') && pattern.endsWith('/i')) {
+					const regexStr = pattern.slice(1, -2);
+					return new RegExp(regexStr, 'i').test(content);
+				}
+				// Support plain strings
+				return content.toLowerCase().includes(pattern.toLowerCase());
+			} catch {
+				return false;
+			}
+		});
+
+		// Determine if we should respond
+		let shouldRespond = false;
+		let responsePrompt = config.promptTemplate ?? "{speaker} posted: {content}\n\nReact or respond in character.";
+
+		if (isMentioned) {
+			// Mentioned by name - guaranteed response
+			shouldRespond = true;
+			// Use stronger prompt for mentions
+			if (config.mentionPromptTemplate) {
+				responsePrompt = config.mentionPromptTemplate;
+			}
+		} else if (config.requireMention) {
+			// Only respond to mentions, skip
+			return;
+		} else {
+			// Chance-based response
+			if (Math.random() > (config.chance ?? 0.5)) return;
+			shouldRespond = true;
+		}
+
 		// Build response prompt
 		const speaker = message.author.username;
-		const content = message.content || "(no text)";
-		const prompt = config.promptTemplate ??
-			"{speaker} posted: {content}\n\nReact or respond in character.";
-		const fullPrompt = prompt.replace("{speaker}", speaker).replace("{content}", content);
-		
+		const fullPrompt = responsePrompt
+			.replace(/{speaker}/g, speaker)
+			.replace(/{content}/g, content)
+			.replace(/{self}/g, instanceTag);
+
 		// Generate response
 		try {
 			const session = await this.createOrchestratorSession();
@@ -1771,7 +1806,7 @@ export class PiDiscordDaemon {
 			});
 			await session.prompt(fullPrompt);
 			unsubscribe();
-			
+
 			if (response) {
 				await message.channel.send(response);
 				this.lastBotFollowup = Date.now();
