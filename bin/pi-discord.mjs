@@ -612,7 +612,7 @@ function cmdBackup(name, routeKey) {
 			console.error(`Route "${routeKey}" not found.`);
 			process.exit(1);
 		}
-		const memoryPath = path.join(routeDir, "route-memory.md");
+		const memoryPath = path.join(routeDir, "route-memory.json");
 		if (!existsSync(memoryPath)) {
 			console.log("No memory file found for route.");
 			return;
@@ -625,7 +625,7 @@ function cmdBackup(name, routeKey) {
 		// Backup all routes
 		let backed = 0;
 		for (const routeSlug of routeDirs) {
-			const memoryPath = path.join(routesDir, routeSlug, "route-memory.md");
+			const memoryPath = path.join(routesDir, routeSlug, "route-memory.json");
 			if (existsSync(memoryPath)) {
 				const backupPath = path.join(routesDir, routeSlug, `memory-backup-${timestamp}.md`);
 				const content = readFileSync(memoryPath, "utf8");
@@ -671,7 +671,7 @@ function cmdScrub(name, routeKey) {
 			console.error(`Route "${routeKey}" not found.`);
 			process.exit(1);
 		}
-		const memoryPath = path.join(routeDir, "route-memory.md");
+		const memoryPath = path.join(routeDir, "route-memory.json");
 		const journalPath = path.join(routeDir, "journal.jsonl");
 
 		// Backup first
@@ -694,7 +694,7 @@ function cmdScrub(name, routeKey) {
 		// Scrub all routes
 		let scrubbed = 0;
 		for (const routeSlug of routeDirs) {
-			const memoryPath = path.join(routesDir, routeSlug, "route-memory.md");
+			const memoryPath = path.join(routesDir, routeSlug, "route-memory.json");
 			if (existsSync(memoryPath)) {
 				const backupPath = path.join(routesDir, routeSlug, `memory-backup-${timestamp}.md`);
 				const content = readFileSync(memoryPath, "utf8");
