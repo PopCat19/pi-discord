@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import {
 	ChannelType,
@@ -1687,7 +1688,13 @@ export class PiDiscordDaemon {
 		const settingsManager = SettingsManager.create(this.paths.workspaceDir, agentDir);
 
 		// Get system prompt from config
-		const systemPrompt = this.config.systemPrompt;
+		let systemPrompt = this.config.systemPrompt ?? "";
+		
+		// Inject lore context if available
+		const loreContext = this.loadLoreContext();
+		if (loreContext) {
+			systemPrompt = systemPrompt + "\n\n" + loreContext;
+		}
 
 		// Check if search is enabled for orchestrator
 		const searchEnabled = this.config.sliceOfBread?.searchEnabled ?? false;
@@ -1730,6 +1737,78 @@ export class PiDiscordDaemon {
 		});
 
 		return session;
+	}
+
+	/**
+	 * Load lore context from the lorebook file.
+	 * @returns {string | null}
+	 */
+	loadLoreContext() {
+		const lorePaths = [
+			path.join(this.paths.workspaceDir, "lore/blue-archive-lore.json"),
+			path.join(homedir(), ".pi/agent/pi-discord-instances/plana/workspace/lore/blue-archive-lore.json"),
+			path.join(homedir(), ".pi/agent/pi-discord-instances/arona/workspace/lore/blue-archive-lore.json"),
+		];
+
+		for (const lorePath of lorePaths) {
+			if (existsSync(lorePath)) {
+				try {
+					const data = readFileSync(lorePath, "utf8");
+					const lore = JSON.parse(data);
+					return this.formatLoreContext(lore);
+				} catch {
+					// Continue to next path
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Format lore object into context string.
+	 * @param {object} lore
+	 * @returns {string}
+	 */
+	formatLoreContext(lore) {
+		const lines = ["## Blue Archive Lore Reference"];
+
+		// Characters
+		if (lore.characters) {
+			lines.push("\n### Characters");
+			for (const [name, data] of Object.entries(lore.characters)) {
+				lines.push(`**${name}**:`);
+				if (data.role) lines.push(`  Role: ${data.role}`);
+				if (data.affiliation) lines.push(`  Affiliation: ${data.affiliation}`);
+				if (data.personality) lines.push(`  Personality: ${data.personality.join(", ")}`);
+				if (data.loreNotes) lines.push(`  Notes: ${data.loreNotes.join("; ")}`);
+			}
+		}
+
+		// Locations
+		if (lore.locations) {
+			lines.push("\n### Locations");
+			for (const [name, data] of Object.entries(lore.locations)) {
+				lines.push(`**${name}**: ${data.description || data.fullName || ""}`);
+			}
+		}
+
+		// Schools
+		if (lore.schools) {
+			lines.push("\n### Schools");
+			for (const [name, data] of Object.entries(lore.schools)) {
+				lines.push(`**${name}**: ${data.theme || ""}. ${data.characteristics || ""}`);
+			}
+		}
+
+		// Terminology
+		if (lore.terminology) {
+			lines.push("\n### Key Terms");
+			for (const [term, def] of Object.entries(lore.terminology)) {
+				lines.push(`**${term}**: ${def}`);
+			}
+		}
+
+		return lines.join("\n");
 	}
 
 	/**
