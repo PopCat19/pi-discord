@@ -84,6 +84,7 @@ export class SliceOfBreadOrchestrator {
 		});
 
 		this.state = this.loadState();
+		this.sharedMemoryPath = config.sharedMemoryPath ?? null;
 		this.checkInterval = null;
 		this.sceneTriggerInterval = null;
 		this.cronTimers = new Map();
@@ -121,6 +122,64 @@ export class SliceOfBreadOrchestrator {
 			`${this.paths.workspaceDir}/${STATE_FILE}`,
 			JSON.stringify(this.state, null, "\t")
 		);
+	}
+
+	/**
+	 * Load shared memory from disk.
+	 * @returns {Object}
+	 */
+	loadSharedMemory() {
+		if (!this.sharedMemoryPath) return { entries: [] };
+		try {
+			const data = readFileSync(this.sharedMemoryPath, "utf8");
+			return JSON.parse(data);
+		} catch {
+			return { entries: [] };
+		}
+	}
+
+	/**
+	 * Save shared memory to disk.
+	 * @param {Object} data
+	 */
+	async saveSharedMemory(data) {
+		if (!this.sharedMemoryPath) return;
+		await writeFileAsync(this.sharedMemoryPath, JSON.stringify(data, null, "\t"));
+	}
+
+	/**
+	 * Append to shared memory.
+	 * @param {Object} entry - { speaker, content, timestamp, scene }
+	 */
+	async appendSharedMemory(entry) {
+		if (!this.sharedMemoryPath) return;
+		const data = this.loadSharedMemory();
+		data.entries = data.entries ?? [];
+		data.entries.push({
+			...entry,
+			timestamp: entry.timestamp ?? Date.now(),
+		});
+		// Keep last 50 entries
+		if (data.entries.length > 50) {
+			data.entries = data.entries.slice(-50);
+		}
+		await this.saveSharedMemory(data);
+	}
+
+	/**
+	 * Get shared memory context (last N entries as string).
+	 * @param {number} maxEntries
+	 * @returns {string}
+	 */
+	getSharedMemoryContext(maxEntries = 10) {
+		if (!this.sharedMemoryPath) return "";
+		const data = this.loadSharedMemory();
+		const entries = (data.entries ?? []).slice(-maxEntries);
+		if (entries.length === 0) return "";
+		return entries.map(e => {
+			const time = new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+			return `[${time}] ${e.speaker}: ${e.content.slice(0, 200)}`;
+		}).join("\n");
 	}
 
 	/**
@@ -642,8 +701,9 @@ export class SliceOfBreadOrchestrator {
 
 			// Build prompt with memory context and topic (or use custom prompt)
 			const memoryContext = this.memory.getContext();
+			const sharedContext = this.getSharedMemoryContext(10);
 			const topic = scene ? await this.selectTopic(scene) : null;
-			const fullPrompt = customPrompt ?? this.buildScenePrompt(scene, memoryContext, topic);
+			const fullPrompt = customPrompt ?? this.buildScenePrompt(scene, memoryContext, topic, sharedContext);
 
 			// Generate or use template
 			let content;
@@ -664,6 +724,13 @@ export class SliceOfBreadOrchestrator {
 				scene: sceneName,
 				topic: topic ?? sceneName,
 				turns: [{ speaker, text: content }],
+			});
+
+			// Log to shared memory for cross-instance context
+			await this.appendSharedMemory({
+				speaker,
+				content,
+				scene: sceneName,
 			});
 
 			// Update state
@@ -695,7 +762,7 @@ export class SliceOfBreadOrchestrator {
 	 * @param {string | null} topic
 	 * @returns {string}
 	 */
-	buildScenePrompt(scene, memoryContext, topic = null) {
+	buildScenePrompt(scene, memoryContext, topic = null, sharedContext = "") {
 		const lines = [];
 
 		lines.push(`Scene: ${scene.name}`);
@@ -705,6 +772,12 @@ export class SliceOfBreadOrchestrator {
 
 		lines.push(`Instruction: ${scene.prompt}`);
 		lines.push("");
+
+		if (sharedContext) {
+			lines.push("## Recent Conversation");
+			lines.push(sharedContext);
+			lines.push("");
+		}
 
 		if (memoryContext) {
 			lines.push("## Previous Context");
