@@ -575,7 +575,7 @@ export class PiDiscordDaemon {
 			if (this.config.botFollowup?.enabled) {
 				await this.handleBotFollowup(message);
 			}
-			// Also pass to orchestrator for slice-of-bread
+			// Also pass to orchestrator for board channel
 			if (this.orchestrator && message.channelId === this.config.sliceOfBread?.channelId) {
 				await this.orchestrator.handleBotMessage(message);
 			}
@@ -643,6 +643,24 @@ export class PiDiscordDaemon {
 			? stripBotMention(message.content ?? "", this.client.user.id)
 			: (message.content ?? "");
 		const trigger = isDm ? "dm" : botMentioned ? "mention" : "followup";
+		
+		// Pulse thinking status
+		if (typeof message.channel.sendTyping === "function") {
+			await message.channel.sendTyping().catch(() => undefined);
+		}
+
+		// Self-destructing status message for pings/followups (optional)
+		let statusMessageId = undefined;
+		if (!isDm && this.config.showThinkingStatus) {
+			try {
+				const statusMsg = await message.reply({ 
+					content: "*Thinking...*", 
+					allowedMentions: { repliedUser: false } 
+				});
+				statusMessageId = statusMsg.id;
+			} catch {}
+		}
+
 		const promptText = buildPromptText({
 			routeKey: route.manifest.routeKey,
 			scope: route.manifest.scope,
@@ -680,6 +698,8 @@ export class PiDiscordDaemon {
 				threadId: scope.threadId,
 				trigger,
 				isAdmin: authorization.canControl,
+				statusMessageId,
+				showPrompt: this.config.showThinkingStatus,
 			},
 			payload: {
 				rawText,
@@ -1148,7 +1168,7 @@ export class PiDiscordDaemon {
 
 		await interaction.deferReply({ ephemeral: true });
 		const reply = await interaction.editReply({
-			content: "Processing...",
+			content: this.config.showThinkingStatus ? "Processing..." : "...",
 		});
 		route.manifest.primaryMessageId = reply.id;
 		await this.registry.saveManifest(route.manifest);
@@ -1181,6 +1201,7 @@ export class PiDiscordDaemon {
 				threadId: scope.threadId,
 				trigger: "slash-command",
 				isAdmin: authorization.canControl,
+				showPrompt: this.config.showThinkingStatus,
 			},
 			payload: {
 				rawText,
@@ -1307,9 +1328,13 @@ export class PiDiscordDaemon {
 
 		try {
 			// Set dynamic presence while processing
-			await this.presenceManager?.setActivity("processing", { ttl: 300000 });
+			if (this.presenceManager) {
+				await this.presenceManager.setActivity("processing", { ttl: 300000 });
+			}
 			
 			await route.queue.markRunning(leasedItem.id);
+			await route.renderer.renderRunning(leasedItem);
+			
 			route.host.currentSourceId = leasedItem.source.sourceId;
 			const session = await route.host.ensureSession();
 			await this.registry.saveManifest(route.manifest);

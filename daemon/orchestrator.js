@@ -1,7 +1,10 @@
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile as writeFileAsync } from "node:fs/promises";
 import path from "node:path";
+import { exec as execCb } from "node:child_process";
+import { promisify } from "node:util";
 import { ChannelMemory } from "../lib/channel-memory.js";
+const execAsync = promisify(execCb);
 
 /**
  * @typedef {Object} SceneConfig
@@ -11,7 +14,6 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @property {string} prompt - Prompt for scene generation
  * @property {string[]} [topics] - Pool of topics to rotate through
  * @property {number} [turns=1] - For future inter-bot scenes
- * @property {boolean} [board] - Post to board channel instead of main channel
  * @property {string} [presence] - Dynamic presence activity during scene
  * @property {Object} [presenceEffect] - Persistent presence effect after scene
  */
@@ -20,7 +22,6 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @typedef {Object} SliceOfBreadConfig
  * @property {boolean} enabled
  * @property {string} channelId - Discord channel ID
- * @property {string} [boardChannelId] - Board channel for Twitter-like posts
  * @property {string} primaryInstance - Which instance runs orchestrator
  * @property {SceneConfig[]} scenes
  * @property {number} [cooldown=3600000] - Min time between scenes (default 1h)
@@ -35,6 +36,11 @@ import { ChannelMemory } from "../lib/channel-memory.js";
  * @property {string} [memoryPath] - Custom memory file path
  * @property {number} [memoryMaxTokens] - Max tokens before compression
  * @property {number} [checkInterval] - RNG check interval in ms
+ * @property {Object} [worldNews] - Real-world news injection config
+ * @property {boolean} worldNews.enabled - Enable world news injection
+ * @property {number} [worldNews.refreshInterval] - How often to refresh (ms, default 6h)
+ * @property {number} [worldNews.maxItems] - Max headlines to store (default 5)
+ * @property {string} [worldNews.searchQuery] - Search query for news
  */
 
 /**
@@ -81,6 +87,9 @@ export class SliceOfBreadOrchestrator {
 		this.checkInterval = null;
 		this.sceneTriggerInterval = null;
 		this.cronTimers = new Map();
+		this.newsRefreshTimer = null;
+		this.newsCache = { headlines: [], fetchedAt: 0 };
+		this.worldNewsConfig = this.config.worldNews ?? { enabled: false };
 	}
 
 	/**
@@ -146,6 +155,17 @@ export class SliceOfBreadOrchestrator {
 				this.logger.error("scene-trigger-check-failed", { error: String(err) })
 			);
 		}, 5000); // Check every 5 seconds
+
+		// Start world news refresh if enabled
+		if (this.worldNewsConfig.enabled) {
+			await this.refreshWorldNews();
+			const newsRefreshMs = this.worldNewsConfig.refreshInterval ?? 21600000; // 6h default
+			this.newsRefreshTimer = setInterval(() => {
+				this.refreshWorldNews().catch(err =>
+					this.logger.error("news-refresh-failed", { error: String(err) })
+				);
+			}, newsRefreshMs);
+		}
 	}
 
 	/**
@@ -204,6 +224,10 @@ export class SliceOfBreadOrchestrator {
 			clearTimeout(timer);
 		}
 		this.cronTimers.clear();
+		if (this.newsRefreshTimer) {
+			clearInterval(this.newsRefreshTimer);
+			this.newsRefreshTimer = null;
+		}
 		await this.logger.info("orchestrator-stopped");
 	}
 
@@ -360,6 +384,63 @@ export class SliceOfBreadOrchestrator {
 	}
 
 	/**
+	 * Fetch recent world news headlines (non-political focus).
+	 * Uses curl + SearXNG public instance for free, no-key search.
+	 */
+	async refreshWorldNews() {
+		try {
+			if (!this.worldNewsConfig.enabled) return;
+
+			const query = encodeURIComponent(
+				this.worldNewsConfig.searchQuery ??
+				"interesting non-political news science technology culture discoveries"
+			);
+			
+			// Use configured endpoint or default to common SearXNG local port
+			const endpoint = this.worldNewsConfig.endpoint ?? "http://127.0.0.1:8080";
+			const searxUrl = `${endpoint.replace(/\/$/, "")}/search?q=${query}&format=json&categories=news`;
+
+			const { stdout } = await execAsync(
+				`curl -s --max-time 5 "${searxUrl}"`,
+				{ timeout: 7000 }
+			);
+			const data = JSON.parse(stdout);
+			const results = data?.results ?? [];
+			const headlines = results
+				.filter(r => r.title && !this.isPolitical(r.title))
+				.map(r => r.title.trim())
+				.slice(0, this.worldNewsConfig.maxItems ?? 5);
+
+			if (headlines.length > 0) {
+				this.newsCache = { headlines, fetchedAt: Date.now() };
+				await this.logger.info("world-news-refreshed", {
+					count: headlines.length,
+					headlines,
+				});
+			}
+		} catch (err) {
+			await this.logger.error("world-news-refresh-failed", { error: String(err) });
+		}
+	}
+
+	/**
+	 * Check if a headline looks political (simple heuristic).
+	 * @param {string} text
+	 * @returns {boolean}
+	 */
+	isPolitical(text) {
+		const politicalTerms = [
+			"election", "president", "congress", "senate", "parliament",
+			"vote", "voting", "campaign", "democrat", "republican",
+			"sanction", "tariff", "war", "military", "invasion",
+			"protest", "impeach", "bill passes", "legislation",
+			"prime minister", "administration", "regime", "coup",
+		];
+		const lower = text.toLowerCase();
+		return politicalTerms.some(term => lower.includes(term));
+	}
+
+	/**
 	 * Call on day refresh to update presence schedule.
 	 */
 	async onDayRefresh() {
@@ -512,14 +593,15 @@ export class SliceOfBreadOrchestrator {
 
 		try {
 			// Set dynamic presence for scene
-			if (this.presenceManager && scene?.presence) {
-				await this.presenceManager.setActivity(scene.presence, { ttl: 120000 });
+			if (this.presenceManager) {
+				const presenceName = scene?.presence ?? "processing";
+				await this.presenceManager.setActivity(presenceName, { ttl: 120000 });
 			}
 
-			// Get channel (board or regular slice-of-bread)
-			const targetChannelId = scene?.board ? this.config.boardChannelId : this.config.channelId;
+			// Get channel
+			const targetChannelId = this.config.channelId;
 			if (!targetChannelId) {
-				throw new Error(`No channel configured for ${scene?.board ? 'board' : 'slice-of-bread'}`);
+				throw new Error('No sliceOfBread channel configured');
 			}
 			const channel = await this.discordClient.channels.fetch(targetChannelId);
 			if (!channel || !channel.isTextBased()) {
@@ -585,7 +667,6 @@ export class SliceOfBreadOrchestrator {
 		const lines = [];
 
 		lines.push(`Scene: ${scene.name}`);
-				
 		if (topic) {
 			lines.push(`Topic: ${topic}`);
 		}
@@ -600,6 +681,20 @@ export class SliceOfBreadOrchestrator {
 		}
 
 		lines.push("Respond naturally as your character. Keep it concise (1-3 sentences).");
+
+		// Inject world news if enabled
+		if (this.worldNewsConfig.enabled && this.newsCache.headlines.length > 0) {
+			const newsAge = Date.now() - this.newsCache.fetchedAt;
+			const newsAgeStr = newsAge < 3600000 ? `${Math.round(newsAge / 60000)}m ago` :
+				newsAge < 86400000 ? `${Math.round(newsAge / 3600000)}h ago` :
+				`${Math.round(newsAge / 86400000)}d ago`;
+			lines.push("");
+			lines.push(`## Recent World News (fetched ${newsAgeStr})`);
+			lines.push("You MAY optionally reference one of these real-world events through your character's perspective. Keep it non-political. Do not force it if nothing fits naturally.");
+			for (const h of this.newsCache.headlines) {
+				lines.push(`- ${h}`);
+			}
+		}
 
 		return lines.join("\n");
 	}

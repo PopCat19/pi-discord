@@ -67,18 +67,25 @@ export class DiscordRenderer {
 	}
 
 	createStopRow() {
-		return [
-			new ActionRowBuilder().addComponents(
-				new ButtonBuilder()
-					.setCustomId(`pi-discord:stop:${this.manifest.routeKey}`)
-					.setLabel("Stop")
-					.setStyle(ButtonStyle.Danger),
-			),
-		];
+		return [];
 	}
 
-	async ensurePrimaryMessage(fallbackText = "Working...") {
+	async ensurePrimaryMessage(fallbackText = "Working...", ephemeral = false, statusMessageId = null) {
 		const channel = await this.getTargetChannel();
+		
+		// If we have a status message to take over
+		if (statusMessageId && "messages" in channel && !this.manifest.primaryMessageId) {
+			try {
+				const statusMsg = await channel.messages.fetch(statusMessageId);
+				if (statusMsg && statusMsg.author.id === this.client.user.id) {
+					// We take over this message
+					this.manifest.primaryMessageId = statusMessageId;
+					await this.persistManifest();
+					return statusMsg;
+				}
+			} catch {}
+		}
+
 		if (this.manifest.primaryMessageId && "messages" in channel) {
 			try {
 				const existing = await channel.messages.fetch(
@@ -94,16 +101,17 @@ export class DiscordRenderer {
 			content: fallbackText,
 			components: this.createStopRow(),
 			allowedMentions: { parse: [] },
+			// Discord doesn't support ephemeral on .send(), only on interaction reply.
 		});
 		this.manifest.primaryMessageId = message.id;
 		await this.persistManifest();
 		return message;
 	}
 
-	async updatePrimary(content, { keepStop = true } = {}) {
+	async updatePrimary(content, { keepStop = true, statusMessageId = null } = {}) {
 		// Debug: log content being rendered
 		console.log("[UPDATE]", JSON.stringify({ contentLen: content.length, last200: content.slice(-200) }));
-		const message = await this.ensurePrimaryMessage(content);
+		const message = await this.ensurePrimaryMessage(content, false, statusMessageId);
 		const chunks = splitDiscordText(content);
 		const primaryContent =
 			keepStop && chunks.length > 1
@@ -261,9 +269,23 @@ export class DiscordRenderer {
 	}
 
 	async renderRunning(item) {
-		await this.updatePrimary(
-			`Working for <@${item.source.userId}>\n\n${item.payload.rawText || "(empty message)"}`,
-		);
+		const isEphemeralTrigger = item.source.kind === "message" || item.source.kind === "mention" || item.source.kind === "followup";
+		const statusMessageId = item.source.statusMessageId;
+		const hasStatusMsg = !!statusMessageId;
+		const showPrompt = item.source.showPrompt !== false;
+		
+		// When showThinkingStatus is false, skip progress message entirely
+		// The final response will be sent directly in processQueueItem
+		if (!showPrompt) {
+			return;
+		}
+		
+		const prefix = (isEphemeralTrigger && !hasStatusMsg) ? "*Thinking...*\n\n" : `Working for <@${item.source.userId}>\n\n`;
+		const content = hasStatusMsg 
+			? (item.payload.rawText || "(empty message)") 
+			: `${prefix}${item.payload.rawText || "(empty message)"}`;
+
+		await this.updatePrimary(content, { statusMessageId });
 	}
 
 	async renderSuccess() {

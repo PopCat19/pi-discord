@@ -498,6 +498,30 @@ which reports whether the daemon is running, its pid, known route count, and cur
 
 **Detached daemon**: The Discord gateway connection runs in a separate long-lived process (`pi-discord-daemon`) rather than inside Pi's runtime. This lets the bot stay online independently of any interactive Pi session.
 
+## Orchestrator (Ambient Interactions)
+
+The daemon includes an optional "Slice of Bread" orchestrator that handles ambient bot interactions and character presence.
+
+- **Ambient Posts**: Automatically triggers scenes based on RNG and cron schedules.
+- **Bot Followups**: Allows bots to reply to each other in the same channel.
+- **Presence Rotation**: Dynamically updates Discord status based on scheduled markers.
+
+### World News Enrichment
+The orchestrator can fetch real-world news to give characters "ambient awareness" of events (science, tech, culture).
+
+To enable:
+1. Run a local [SearXNG](https://github.com/searxng/searxng) instance.
+2. In `config.json`, add:
+```json
+"worldNews": {
+    "enabled": true,
+    "endpoint": "http://127.0.0.1:8080",
+    "refreshInterval": 21600000,
+    "maxItems": 5,
+    "searchQuery": "interesting non-political science and tech news"
+}
+```
+
 ## Safety model
 
 A few constraints are deliberate.
