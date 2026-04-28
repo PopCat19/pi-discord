@@ -1322,6 +1322,7 @@ export class PiDiscordDaemon {
 
 	async processQueueItem(route, leasedItem) {
 		let heartbeat;
+		let typingHeartbeat;
 		let unsubscribe = () => undefined;
 		const isTrigger = leasedItem.source.kind === "trigger";
 		let assistantText = "";
@@ -1334,6 +1335,17 @@ export class PiDiscordDaemon {
 			
 			await route.queue.markRunning(leasedItem.id);
 			await route.renderer.renderRunning(leasedItem);
+			
+			// Pulse typing indicator during processing (Discord expires after ~10s)
+			if (!this.config.showThinkingStatus && leasedItem.source.kind !== "interaction") {
+				const channel = await route.renderer.getTargetChannel().catch(() => undefined);
+				if (channel && typeof channel.sendTyping === "function") {
+					await channel.sendTyping().catch(() => undefined);
+					typingHeartbeat = setInterval(() => {
+						channel.sendTyping().catch(() => undefined);
+					}, 8000);
+				}
+			}
 			
 			route.host.currentSourceId = leasedItem.source.sourceId;
 			const session = await route.host.ensureSession();
@@ -1498,6 +1510,7 @@ export class PiDiscordDaemon {
 		} finally {
 			route.host.currentSourceId = undefined;
 			if (heartbeat) clearInterval(heartbeat);
+			if (typingHeartbeat) clearInterval(typingHeartbeat);
 			unsubscribe();
 			
 			// Clear dynamic presence, return to schedule
