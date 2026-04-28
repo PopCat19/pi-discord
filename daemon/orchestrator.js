@@ -106,6 +106,9 @@ export class SliceOfBreadOrchestrator {
 				lastSceneTime: 0,
 				lastTriggers: {},
 				recentTopics: [], // [{ topic, scene, timestamp }]
+				lastBotMessageTime: 0,
+				currentChainId: undefined,
+				recentBotTurns: [],
 			};
 		}
 	}
@@ -178,7 +181,24 @@ export class SliceOfBreadOrchestrator {
 
 		// Check cooldown for bot messages (shorter than regular cooldown)
 		const botCooldown = this.config.botFollowup.cooldown ?? 60000; // 1 minute default
-		if (Date.now() - (this.state.lastBotMessageTime ?? 0) < botCooldown) {
+		const maxTurns = this.config.botFollowup.maxTurns ?? 1;
+		
+		// Track conversation turns by checking recent bot messages
+		const recentTurns = this.state.recentBotTurns ?? [];
+		const now = Date.now();
+		
+		// Count turns in the last 5 minutes (active conversation window)
+		const conversationWindow = 5 * 60 * 1000;
+		const activeTurns = recentTurns.filter(t => now - t.time < conversationWindow);
+		const currentChainLength = activeTurns.filter(t => t.chain === this.state.currentChainId).length;
+		
+		// Generate new chain ID if starting fresh
+		if (activeTurns.length === 0 || now - (this.state.lastBotMessageTime ?? 0) > botCooldown) {
+			this.state.currentChainId = now.toString();
+		}
+		
+		// Check if we've hit max turns for this chain
+		if (currentChainLength >= maxTurns) {
 			return;
 		}
 
@@ -193,7 +213,15 @@ export class SliceOfBreadOrchestrator {
 		// Build prompt with context of the other bot's message
 		const speakerName = message.author.username;
 		const content = message.content || "(no text content)";
-		const prompt = this.config.botFollowup.promptTemplate ??
+		const isMention = this.config.botFollowup.mentionPatterns?.some(p => 
+			content.toLowerCase().includes(p.toLowerCase())
+		);
+		
+		const promptTemplate = isMention 
+			? (this.config.botFollowup.mentionPromptTemplate ?? this.config.botFollowup.promptTemplate)
+			: this.config.botFollowup.promptTemplate;
+		
+		const prompt = promptTemplate ??
 			"Another bot ({speaker}) posted: {content}\n\nReact or respond in character.";
 
 		const fullPrompt = prompt
@@ -203,8 +231,12 @@ export class SliceOfBreadOrchestrator {
 		// Trigger the response
 		await this.triggerScene("bot-followup", "bot-message", fullPrompt);
 
-		// Update state
-		this.state.lastBotMessageTime = Date.now();
+		// Update state - track this turn
+		this.state.lastBotMessageTime = now;
+		this.state.recentBotTurns = [
+			...(recentTurns.filter(t => now - t.time < conversationWindow)),
+			{ time: now, chain: this.state.currentChainId, speaker: this.instanceName }
+		].slice(-20); // Keep last 20 turns
 		await this.saveState();
 	}
 
