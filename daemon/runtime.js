@@ -905,10 +905,19 @@ export class PiDiscordDaemon {
 			}
 			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
 			const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-			const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
+			const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
 			try {
-				// Backup memory file
-				if (await pathExists(routePaths.sharedMemoryPath)) {
+				// Backup memory file (.json is actual format)
+				if (await pathExists(memoryJsonPath)) {
+					const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.json`);
+					const memoryContent = await readFile(memoryJsonPath, "utf8");
+					await writeFile(backupPath, memoryContent, "utf8");
+					await interaction.reply({
+						content: `Backed up memory to ${path.basename(backupPath)}.`,
+						ephemeral: true,
+					});
+				} else if (await pathExists(routePaths.sharedMemoryPath)) {
+					const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
 					const memoryContent = await readFile(routePaths.sharedMemoryPath, "utf8");
 					await writeFile(backupPath, memoryContent, "utf8");
 					await interaction.reply({
@@ -956,18 +965,32 @@ export class PiDiscordDaemon {
 			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
 			let message = "";
 			try {
+				// Memory file paths (.json is the actual format used by ChannelMemory)
+				const memoryMdPath = routePaths.sharedMemoryPath;
+				const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
+				
 				// Optional backup
-				if (doBackup && (await pathExists(routePaths.sharedMemoryPath))) {
+				if (doBackup) {
 					const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-					const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
-					const memoryContent = await readFile(routePaths.sharedMemoryPath, "utf8");
-					await writeFile(backupPath, memoryContent, "utf8");
-					message += `Backed up to ${path.basename(backupPath)}. `;
+					if (await pathExists(memoryJsonPath)) {
+						const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.json`);
+						const memoryContent = await readFile(memoryJsonPath, "utf8");
+						await writeFile(backupPath, memoryContent, "utf8");
+						message += `Backed up to ${path.basename(backupPath)}. `;
+					} else if (await pathExists(memoryMdPath)) {
+						const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
+						const memoryContent = await readFile(memoryMdPath, "utf8");
+						await writeFile(backupPath, memoryContent, "utf8");
+						message += `Backed up to ${path.basename(backupPath)}. `;
+					}
 				}
 				// Scrub memory
-				if (await pathExists(routePaths.sharedMemoryPath)) {
-					await writeFile(routePaths.sharedMemoryPath, "", "utf8");
+				if (await pathExists(memoryJsonPath)) {
+					await writeFile(memoryJsonPath, "{\"channelId\":\"\",\"tokenEstimate\":0,\"maxTokens\":8192,\"compressed\":[],\"recent\":[]}", "utf8");
 					message += "Memory cleared. ";
+				}
+				if (await pathExists(memoryMdPath)) {
+					await writeFile(memoryMdPath, "", "utf8");
 				}
 				// Optional journal clear
 				if (clearJournal) {
@@ -1022,9 +1045,15 @@ export class PiDiscordDaemon {
 			await Promise.all([
 				removeIfExists(routePaths.journalPath),
 				removeIfExists(routePaths.sharedMemoryPath),
+				removeIfExists(routePaths.sharedMemoryPath.replace(".md", ".json")),
 			]);
 			// Clear in-memory journal
 			route.journal.entries.length = 0;
+			
+			// Clear in-memory channel memory
+			if (route.memory) {
+				route.memory.clear();
+			}
 			
 			// Send separator message to channel
 			const channel = interaction.channel;
