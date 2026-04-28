@@ -1685,15 +1685,18 @@ export class PiDiscordDaemon {
 		const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
 		const modelRegistry = await ModelRegistry.create(authStorage, `${agentDir}/models.json`);
 		const settingsManager = SettingsManager.create(this.paths.workspaceDir, agentDir);
-		
+
 		// Get system prompt from config
 		const systemPrompt = this.config.systemPrompt;
-		
+
+		// Check if search is enabled for orchestrator
+		const searchEnabled = this.config.sliceOfBread?.searchEnabled ?? false;
+
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: this.paths.workspaceDir,
 			agentDir,
 			settingsManager,
-			noExtensions: true,
+			noExtensions: !searchEnabled,
 			noPromptTemplates: true,
 			noThemes: true,
 			systemPrompt,
