@@ -226,15 +226,6 @@ export class SliceOfBreadOrchestrator {
 		delete data.dismissed[botName.toLowerCase()];
 		await this.saveSharedMemory(data);
 	}
-		if (!this.sharedMemoryPath) return "";
-		const data = this.loadSharedMemory();
-		const entries = (data.entries ?? []).slice(-maxEntries);
-		if (entries.length === 0) return "";
-		return entries.map(e => {
-			const time = new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-			return `[${time}] ${e.speaker}: ${e.content.slice(0, 200)}`;
-		}).join("\n");
-	}
 
 	/**
 	 * Start the orchestrator.
