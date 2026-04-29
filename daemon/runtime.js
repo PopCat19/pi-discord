@@ -973,10 +973,17 @@ export class PiDiscordDaemon {
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
 			const clearJournal = interaction.options.getBoolean("journal") ?? false;
 			const doClear = interaction.options.getBoolean("clear") ?? false;
+			const targetChannel = interaction.options.getChannel("channel");
+			
+			// Use target channel or current channel
+			const channelId = targetChannel?.id ?? interaction.channelId;
+			const guildId = targetChannel?.guildId ?? interaction.guildId;
+			const channel = targetChannel ?? interaction.channel;
+			
 			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
+				guildId ?? null,
+				channelId,
+				channel,
 			);
 			const route = await this.getExistingRoute(scope);
 			if (!route) {
@@ -1041,7 +1048,7 @@ export class PiDiscordDaemon {
 				if (doClear) {
 					try {
 						// Fetch recent messages and delete bot's own
-						const messages = await interaction.channel.messages.fetch({ limit: 50 });
+						const messages = await channel.messages.fetch({ limit: 50 });
 						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
 						for (const msg of botMsgs.values()) {
 							try {
@@ -1051,7 +1058,7 @@ export class PiDiscordDaemon {
 							}
 						}
 						// Post separator marking new state
-						await interaction.channel.send("---[new state]---");
+						await channel.send("---[new state]---");
 						message += ` Cleared ${botMsgs.size} messages.`;
 					} catch (e) {
 						message += ` Message clear failed: ${String(e)}`;
