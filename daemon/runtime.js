@@ -843,7 +843,7 @@ export class PiDiscordDaemon {
 			return;
 		}
 
-		if (subcommand === "reset") {
+		if (subcommand === "new") {
 			if (!authorization.canControl) {
 				await interaction.reply({
 					content: "Only admin Discord user ids may reset routes.",
@@ -962,17 +962,15 @@ export class PiDiscordDaemon {
 			return;
 		}
 
-		if (subcommand === "scrub") {
+		if (subcommand === "wipe") {
 			if (!authorization.canControl) {
 				await interaction.reply({
-					content: "Only admin Discord user ids may scrub memory.",
+					content: "Only admin Discord user ids may wipe routes.",
 					ephemeral: true,
 				});
 				return;
 			}
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
-			const clearJournal = interaction.options.getBoolean("journal") ?? true; // Default true for clean slate
-			const doClear = interaction.options.getBoolean("clear") ?? false;
 			const targetChannel = interaction.options.getChannel("channel");
 			
 			// Use target channel or current channel
@@ -985,165 +983,91 @@ export class PiDiscordDaemon {
 				channelId,
 				channel,
 			);
-			const route = await this.getExistingRoute(scope);
-			
-			// For clear-only operation on orchestrator channel, allow without route
-			const isOrchChannel = this.config.sliceOfBread?.channelId === channelId;
-			if (!route && !(doClear && isOrchChannel)) {
-				await interaction.reply({
-					content: `Route ${scope.routeKey} has no saved state.`,
-					ephemeral: true,
-				});
-				return;
-			}
-			
-			const routePaths = route ? getRoutePaths(this.paths, route.manifest.routeKey) : null;
-			let message = "";
-			try {
-				// Memory operations (skip if no route)
-				if (routePaths) {
-					// Memory file paths (.json is the actual format used by ChannelMemory)
-					const memoryMdPath = routePaths.sharedMemoryPath;
-					const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
-				
-				// Optional backup
-				if (doBackup) {
-					const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-					if (await pathExists(memoryJsonPath)) {
-						const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.json`);
-						const memoryContent = await readFile(memoryJsonPath, "utf8");
-						await writeFile(backupPath, memoryContent, "utf8");
-						message += `Backed up to ${path.basename(backupPath)}. `;
-					} else if (await pathExists(memoryMdPath)) {
-						const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.md`);
-						const memoryContent = await readFile(memoryMdPath, "utf8");
-						await writeFile(backupPath, memoryContent, "utf8");
-						message += `Backed up to ${path.basename(backupPath)}. `;
-					}
-				}
-				// Scrub memory
-				if (await pathExists(memoryJsonPath)) {
-					await writeFile(memoryJsonPath, "{\"channelId\":\"\",\"tokenEstimate\":0,\"maxTokens\":8192,\"compressed\":[],\"recent\":[]}", "utf8");
-					message += "Memory cleared. ";
-				}
-				if (await pathExists(memoryMdPath)) {
-					await writeFile(memoryMdPath, "", "utf8");
-				}
-				// Optional journal clear
-				if (clearJournal) {
-					await removeIfExists(routePaths.journalPath);
-					route.journal.entries.length = 0;
-					message += "Journal cleared.";
-				}
-				// Clear in-memory memory
-				if (route.memory) {
-					route.memory.clear();
-				}
-				}
-				
-				// Clear shared memory (orchestrator bread-memory.json)
-				if (this.orchestrator?.sharedMemoryPath) {
-					try {
-						await writeFile(this.orchestrator.sharedMemoryPath, JSON.stringify({ entries: [], dismissed: {} }, null, "\t"), "utf8");
-						message += " Shared memory cleared.";
-					} catch (e) {
-						// Ignore if file doesn't exist
-					}
-				}
-				
-				// Delete bot messages and post separator if clear option
-				if (doClear) {
-					try {
-						// Also clear route journal to prevent poisoning (DMs can't delete user msgs)
-						if (route) {
-							await removeIfExists(routePaths.journalPath);
-							route.journal.entries.length = 0;
-							message += "Journal cleared. ";
-						}
-						// Fetch recent messages and delete bot's own
-						const messages = await channel.messages.fetch({ limit: 50 });
-						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
-						for (const msg of botMsgs.values()) {
-							try {
-								await msg.delete();
-							} catch (e) {
-								// Ignore deletion errors (permissions, already deleted)
-							}
-						}
-						// Post separator marking new state
-						await channel.send("---[new state]---");
-						message += ` Cleared ${botMsgs.size} messages.`;
-					} catch (e) {
-						message += ` Message clear failed: ${String(e)}`;
-					}
-				}
-				
-				await interaction.reply({
-					content: message || "Nothing to scrub.",
-					ephemeral: true,
-				});
-			} catch (err) {
-				await interaction.reply({
-					content: `Scrub failed: ${String(err)}`,
-					ephemeral: true,
-				});
-			}
-			return;
-		}
-
-		if (subcommand === "wipe") {
-			if (!authorization.canControl) {
-				await interaction.reply({
-					content: "Only admin Discord user ids may wipe routes.",
-					ephemeral: true,
-				});
-				return;
-			}
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
 			await this.abortRoute(scope.routeKey);
 			const route = await this.getExistingRoute(scope);
-			if (!route) {
+			
+			// Allow wipe on orchestrator channel even without route
+			const isOrchChannel = this.config.sliceOfBread?.channelId === channelId;
+			if (!route && !isOrchChannel) {
 				await interaction.reply({
 					content: `Route ${scope.routeKey} has no saved state to wipe.`,
 					ephemeral: true,
 				});
 				return;
 			}
-			await route.host.dispose();
-			route.manifest.sessionFile = undefined;
-			await this.registry.saveManifest(route.manifest);
-			// Clear journal and memory for full context wipe
-			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
-			await Promise.all([
-				removeIfExists(routePaths.journalPath),
-				removeIfExists(routePaths.sharedMemoryPath),
-				removeIfExists(routePaths.sharedMemoryPath.replace(".md", ".json")),
-			]);
-			// Clear in-memory journal
-			route.journal.entries.length = 0;
-			
-			// Clear in-memory channel memory
-			if (route.memory) {
-				route.memory.clear();
-			}
-			
-			// Send separator message to channel
-			const channel = interaction.channel;
-			if (channel) {
-				await channel.send({
-					content: "---",
-					allowedMentions: { parse: [] },
-				});
-			}
 			
 			await interaction.reply({
-				content: `Wiped route ${scope.routeKey} (session reset + journal cleared + memory cleared).`,
-				ephemeral: true,
+				content: "Wiping...",
+					ephemeral: true,
 			});
+			
+			let message = "";
+			try {
+				if (route) {
+					await route.host.dispose();
+				route.manifest.sessionFile = undefined;
+				await this.registry.saveManifest(route.manifest);
+				
+				const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
+				
+				// Optional backup
+					if (doBackup) {
+						const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+						const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
+						if (await pathExists(memoryJsonPath)) {
+							const backupPath = path.join(routePaths.routeDir, `memory-backup-${timestamp}.json`);
+							const memoryContent = await readFile(memoryJsonPath, "utf8");
+							await writeFile(backupPath, memoryContent, "utf8");
+							message += `Backed up to ${path.basename(backupPath)}. `;
+						}
+					}
+				
+				// Clear journal and memory
+				await Promise.all([
+					removeIfExists(routePaths.journalPath),
+					removeIfExists(routePaths.sharedMemoryPath),
+					removeIfExists(routePaths.sharedMemoryPath.replace(".md", ".json")),
+				]);
+				route.journal.entries.length = 0;
+					if (route.memory) {
+						route.memory.clear();
+					}
+					}
+				
+				// Clear shared memory (orchestrator)
+				if (this.orchestrator?.sharedMemoryPath) {
+					try {
+						await writeFile(this.orchestrator.sharedMemoryPath, JSON.stringify({ entries: [], dismissed: {} }, null, "\t"), "utf8");
+						message += "Shared memory cleared. ";
+					} catch (e) {}
+				}
+				
+				// Delete bot messages
+				try {
+					const messages = await channel.messages.fetch({ limit: 50 });
+					const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
+					for (const msg of botMsgs.values()) {
+						try { await msg.delete(); } catch (e) {}
+					}
+					message += `Cleared ${botMsgs.size} messages. `;
+				} catch (e) {}
+				
+				// Send separator
+				await channel.send({
+					content: "[fresh start]",
+					allowedMentions: { parse: [] },
+				});
+				
+				await interaction.editReply({
+					content: `Wiped. ${message}` || "Done.",
+					ephemeral: true,
+				});
+			} catch (err) {
+				await interaction.editReply({
+					content: `Wipe failed: ${String(err)}`,
+					ephemeral: true,
+				});
+			}
 			return;
 		}
 
