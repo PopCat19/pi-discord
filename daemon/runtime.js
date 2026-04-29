@@ -1054,6 +1054,12 @@ export class PiDiscordDaemon {
 				// Delete bot messages and post separator if clear option
 				if (doClear) {
 					try {
+						// Also clear route journal to prevent poisoning (DMs can't delete user msgs)
+						if (route) {
+							await removeIfExists(routePaths.journalPath);
+							route.journal.entries.length = 0;
+							message += "Journal cleared. ";
+						}
 						// Fetch recent messages and delete bot's own
 						const messages = await channel.messages.fetch({ limit: 50 });
 						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
