@@ -1027,6 +1027,16 @@ export class PiDiscordDaemon {
 					route.memory.clear();
 				}
 				
+				// Clear shared memory (orchestrator bread-memory.json)
+				if (this.orchestrator?.sharedMemoryPath) {
+					try {
+						await writeFile(this.orchestrator.sharedMemoryPath, JSON.stringify({ entries: [], dismissed: {} }, null, "\t"), "utf8");
+						message += " Shared memory cleared.";
+					} catch (e) {
+						// Ignore if file doesn't exist
+					}
+				}
+				
 				// Delete bot messages and post separator if clear option
 				if (doClear) {
 					try {
