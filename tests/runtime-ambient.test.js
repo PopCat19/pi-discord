@@ -33,3 +33,34 @@ test("ambient guild messages do not create route state before the bot is engaged
 
 	assert.equal(daemon.routeContexts.size, 0);
 });
+
+test("DM messages from allowlisted users are processed", async () => {
+	const tempDir = await mkdtemp(
+		path.join(os.tmpdir(), "pi-discord-runtime-dm-"),
+	);
+	const paths = getPaths({
+		agentDir: tempDir,
+		workspaceDir: path.join(tempDir, "workspace"),
+	});
+	const config = createDefaultConfig(paths);
+	config.dmAllowlistUserIds = ["u1"];
+
+	const daemon = new PiDiscordDaemon({ paths, config });
+	daemon.client.user = { id: "bot-1" };
+
+	// DM message (no guildId) from allowlisted user
+	await daemon.handleMessageCreate({
+		id: "m1",
+		guildId: null, // DM
+		channelId: "dm1",
+		channel: { id: "dm1", isThread: () => false },
+		author: { id: "u1", username: "alice", bot: false },
+		content: "hello bot",
+		mentions: { users: { has: () => false } },
+		attachments: { values: () => [] },
+		member: null,
+	});
+
+	// DM should create a route (processed normally)
+	assert.equal(daemon.routeContexts.size, 1);
+});
