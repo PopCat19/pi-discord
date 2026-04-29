@@ -600,8 +600,28 @@ export class PiDiscordDaemon {
 		// Check if other bots are mentioned - if so, don't respond at all
 		const otherBotMentioned = message.mentions.users?.some?.(user => user.bot && user.id !== this.client.user.id) ?? false;
 		
-		// If another bot is mentioned and we're not mentioned, skip entirely
-		if (otherBotMentioned && !botMentioned) return;
+		// If another bot is mentioned and we're not mentioned, skip processing
+		// but still journal as ambient context
+		if (otherBotMentioned && !botMentioned) {
+			const scope = this.resolveScopeFromChannel(
+				message.guildId ?? null,
+				message.channelId,
+				message.channel,
+			);
+			const route = await this.getExistingRoute(scope);
+			if (route) {
+				await route.journal.append({
+					kind: "ambient",
+					sourceId: message.id,
+					routeKey: route.manifest.routeKey,
+					timestamp: Date.now(),
+					text: message.content ?? "",
+					authorId: message.author.id,
+					authorName: message.member?.displayName ?? message.author.displayName,
+				});
+			}
+			return;
+		}
 		
 		if (!botMentioned && !isDm) {
 			const scope = this.resolveScopeFromChannel(
