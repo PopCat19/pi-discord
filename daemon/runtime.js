@@ -579,6 +579,24 @@ export class PiDiscordDaemon {
 			if (this.orchestrator && message.channelId === this.config.sliceOfBread?.channelId) {
 				await this.orchestrator.handleBotMessage(message);
 			}
+			// Journal other bot messages as ambient context for this bot
+			const scope = this.resolveScopeFromChannel(
+				message.guildId ?? null,
+				message.channelId,
+				message.channel,
+			);
+			const route = await this.getExistingRoute(scope);
+			if (route) {
+				await route.journal.append({
+					kind: "ambient",
+					sourceId: message.id,
+					routeKey: route.manifest.routeKey,
+					timestamp: Date.now(),
+					text: message.content ?? "",
+					authorId: message.author.id,
+					authorName: message.member?.displayName ?? message.author.displayName,
+				});
+			}
 			return;
 		}
 		const authorization = authorizeInteraction(
