@@ -972,6 +972,7 @@ export class PiDiscordDaemon {
 			}
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
 			const clearJournal = interaction.options.getBoolean("journal") ?? false;
+			const doClear = interaction.options.getBoolean("clear") ?? false;
 			const scope = this.resolveScopeFromChannel(
 				interaction.guildId ?? null,
 				interaction.channelId,
@@ -1025,6 +1026,28 @@ export class PiDiscordDaemon {
 				if (route.memory) {
 					route.memory.clear();
 				}
+				
+				// Delete bot messages and post separator if clear option
+				if (doClear) {
+					try {
+						// Fetch recent messages and delete bot's own
+						const messages = await interaction.channel.messages.fetch({ limit: 50 });
+						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
+						for (const msg of botMsgs.values()) {
+							try {
+								await msg.delete();
+							} catch (e) {
+								// Ignore deletion errors (permissions, already deleted)
+							}
+						}
+						// Post separator marking new state
+						await interaction.channel.send("---[new state]---");
+						message += ` Cleared ${botMsgs.size} messages.`;
+					} catch (e) {
+						message += ` Message clear failed: ${String(e)}`;
+					}
+				}
+				
 				await interaction.reply({
 					content: message || "Nothing to scrub.",
 					ephemeral: true,
