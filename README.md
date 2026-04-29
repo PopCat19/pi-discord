@@ -97,6 +97,8 @@ pi-discord migrate <name>      Migrate legacy instance
 pi-discord sync-commands <name> Sync slash commands
 pi-discord trigger <name> <scene> Trigger a scene manually
 pi-discord routes <name> [days] List/wipe stale routes
+pi-discord backup <name> [route?] Backup route memory (admin)
+pi-discord scrub <name> [route?] Scrub route memory (admin)
 pi-discord halt <name>         Stop all runs and clear queue (admin)
 ```
 
@@ -282,6 +284,8 @@ Current fields:
 - `sharedExecutionRoot`: execution root to use when `workspaceMode` is `shared`
 - `routeOverrides`: per-route overrides for execution root or workspace mode
 - `allowProjectExtensions`: if `true`, bot sessions load discovered extensions in addition to the built-in helper extension. This is less safe in headless mode
+- `disabledExtensions`: array of extension names to exclude (e.g. `["pi-lsp-extension"]`)
+- `showThinkingStatus`: if `false`, skips "Thinking..." status message, relies on typing indicator only (default: true)
 - `enableImageInput`: if `false`, image attachments stay on disk and are described in text instead of being sent as model image input
 - `enableDetailsThreads`: if `true`, the daemon will try to open and reuse a details thread for tool chatter and uploads
 - `globalConcurrency`: max routes processed at once
@@ -353,6 +357,8 @@ Inside Discord, the package currently supports these slash subcommands under wha
 - `/<command> stop` - Stop the active route run
 - `/<command> reset` - Reset the current route session
 - `/<command> wipe` - Full wipe: session + journal + memory
+- `/<command> backup` - Backup route memory to file (admin only)
+- `/<command> scrub` - Clear memory, optionally backup first (admin only)
 - `/<command> regen` - Regenerate the last bot response (or generate for missed mention)
 - `/<command> halt` - Stop all running/queued items (admin only)
 - `/<command> routes [wipe]` - List routes or wipe stale ones (admin only)
@@ -505,6 +511,44 @@ The daemon includes an optional "Slice of Bread" orchestrator that handles ambie
 - **Ambient Posts**: Automatically triggers scenes based on RNG and cron schedules.
 - **Bot Followups**: Allows bots to reply to each other in the same channel.
 - **Presence Rotation**: Dynamically updates Discord status based on scheduled markers.
+- **Shared Memory**: Cross-instance memory for coordinated conversations.
+
+### Config
+
+```json
+"sliceOfBread": {
+  "enabled": true,
+  "channelId": "123456789",
+  "primaryInstance": "arona",
+  "cooldown": 3600000,
+  "sharedMemoryPath": "~/.pi/agent/pi-discord-instances/shared/bread-memory.json",
+  "globalTopics": ["topic1", "topic2"],
+  "scenes": [
+    {
+      "name": "morning-greeting",
+      "trigger": { "cron": "0 7 * * *" },
+      "speaker": "arona",
+      "prompt": "Good morning. Be brief."
+    }
+  ],
+  "botFollowup": {
+    "enabled": true,
+    "cooldown": 30000,
+    "maxTurns": 4,
+    "responders": ["arona"],
+    "chance": 0.8,
+    "mentionPatterns": ["name1", "name2"],
+    "promptTemplate": "Bot: {content}"
+  }
+}
+```
+
+**Fields:**
+- `channelId`: The bread channel ID
+- `sharedMemoryPath`: Path for cross-instance shared memory file
+- `scenes`: Array of scene configs with `name`, `trigger` (cron or rng), `speaker`, `prompt`
+- `botFollowup.maxTurns`: Max back-and-forth turns between bots (default: 1)
+- `botFollowup.cooldown`: Time between bot responses in ms (default: 60000)
 
 ### World News Enrichment
 The orchestrator can fetch real-world news to give characters "ambient awareness" of events (science, tech, culture).
