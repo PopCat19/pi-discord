@@ -183,6 +183,60 @@ export class SliceOfBreadOrchestrator {
 	}
 
 	/**
+	 * Check if a bot is dismissed (active dismissal marker in shared memory).
+	 * @param {string} botName
+	 * @returns {boolean}
+	 */
+	isDismissed(botName) {
+		if (!this.sharedMemoryPath) return false;
+		const data = this.loadSharedMemory();
+		const dismissed = data.dismissed ?? {};
+		const botState = dismissed[botName.toLowerCase()];
+		if (!botState) return false;
+		// Dismissal expires after 5 minutes
+		if (Date.now() - botState.timestamp > 5 * 60 * 1000) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Mark a bot as dismissed.
+	 * @param {string} botName
+	 */
+	async setDismissed(botName) {
+		if (!this.sharedMemoryPath) return;
+		const data = this.loadSharedMemory();
+		data.dismissed = data.dismissed ?? {};
+		data.dismissed[botName.toLowerCase()] = {
+			dismissed: true,
+			timestamp: Date.now(),
+		};
+		await this.saveSharedMemory(data);
+	}
+
+	/**
+	 * Clear dismissed state for a bot (on activation).
+	 * @param {string} botName
+	 */
+	async clearDismissed(botName) {
+		if (!this.sharedMemoryPath) return;
+		const data = this.loadSharedMemory();
+		data.dismissed = data.dismissed ?? {};
+		delete data.dismissed[botName.toLowerCase()];
+		await this.saveSharedMemory(data);
+	}
+		if (!this.sharedMemoryPath) return "";
+		const data = this.loadSharedMemory();
+		const entries = (data.entries ?? []).slice(-maxEntries);
+		if (entries.length === 0) return "";
+		return entries.map(e => {
+			const time = new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+			return `[${time}] ${e.speaker}: ${e.content.slice(0, 200)}`;
+		}).join("\n");
+	}
+
+	/**
 	 * Start the orchestrator.
 	 */
 	async start() {
