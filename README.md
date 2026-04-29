@@ -367,6 +367,17 @@ In addition, a direct mention (user or role) in a guild channel or a DM from an 
 
 Once a route already exists, follow-up messages from users who recently interacted with the bot (including via slash commands) are also enqueued. Other guild messages in that same surface are journaled as ambient context instead of immediately triggering the agent.
 
+### Multi-bot behavior
+
+When multiple bot instances share a channel:
+
+- **Direct mentions**: Only the mentioned bot responds
+- **Other bot messages**: Each bot journals other bots' messages as ambient context for cross-bot awareness
+- **Followup detection**: Only the bot that was last mentioned/responded treats subsequent messages as followups
+- **Ambient context**: All bots see each other's responses, enabling them to reference earlier conversations
+
+This allows characters to maintain awareness of conversations they weren't directly involved in, while ensuring only the relevant bot responds to followups.
+
 ## Pi operator commands
 
 Inside Pi, the extension exposes:
