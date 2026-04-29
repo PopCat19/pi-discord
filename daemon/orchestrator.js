@@ -84,7 +84,7 @@ export class SliceOfBreadOrchestrator {
 		});
 
 		this.state = this.loadState();
-		this.sharedMemoryPath = config.sharedMemoryPath ?? null;
+		this.sharedMemoryPath = this.config.sharedMemoryPath ?? null;
 		this.checkInterval = null;
 		this.sceneTriggerInterval = null;
 		this.cronTimers = new Map();
