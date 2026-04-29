@@ -596,7 +596,11 @@ export class PiDiscordDaemon {
 					return botMember?.roles?.cache?.has(role.id);
 				}));
 		const isDm = !message.guildId;
-		if (!botMentioned && !isDm) {
+		
+		// Check if other bots are mentioned - if so, don't respond as followup
+		const otherBotMentioned = message.mentions.users?.some?.(user => user.bot && user.id !== this.client.user.id) ?? false;
+		
+		if (!botMentioned && !isDm && !otherBotMentioned) {
 			const scope = this.resolveScopeFromChannel(
 				message.guildId ?? null,
 				message.channelId,
