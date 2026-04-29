@@ -986,19 +986,25 @@ export class PiDiscordDaemon {
 				channel,
 			);
 			const route = await this.getExistingRoute(scope);
-			if (!route) {
+			
+			// For clear-only operation on orchestrator channel, allow without route
+			const isOrchChannel = this.config.sliceOfBread?.channelId === channelId;
+			if (!route && !(doClear && isOrchChannel)) {
 				await interaction.reply({
 					content: `Route ${scope.routeKey} has no saved state.`,
 					ephemeral: true,
 				});
 				return;
 			}
-			const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
+			
+			const routePaths = route ? getRoutePaths(this.paths, route.manifest.routeKey) : null;
 			let message = "";
 			try {
-				// Memory file paths (.json is the actual format used by ChannelMemory)
-				const memoryMdPath = routePaths.sharedMemoryPath;
-				const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
+				// Memory operations (skip if no route)
+				if (routePaths) {
+					// Memory file paths (.json is the actual format used by ChannelMemory)
+					const memoryMdPath = routePaths.sharedMemoryPath;
+					const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
 				
 				// Optional backup
 				if (doBackup) {
@@ -1032,6 +1038,7 @@ export class PiDiscordDaemon {
 				// Clear in-memory memory
 				if (route.memory) {
 					route.memory.clear();
+				}
 				}
 				
 				// Clear shared memory (orchestrator bread-memory.json)
