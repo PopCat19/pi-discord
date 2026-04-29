@@ -597,78 +597,9 @@ export class PiDiscordDaemon {
 				}));
 		const isDm = !message.guildId;
 		
-		// Dismissal/activation keyword detection
-		const content = (message.content ?? "").toLowerCase();
-		const dismissKeywords = ["dismissed", "dismiss", "bye", "goodbye", "stand down", "that's all"];
-		const activateKeywords = ["activate", "online", "wake up", "hello", "hey", "hi"];
-		const isDismissal = dismissKeywords.some(k => content.includes(k));
-		const isActivation = activateKeywords.some(k => content.includes(k));
-		
-		// Handle dismissal state via orchestrator
-		if (this.orchestrator && botMentioned) {
-			const botName = this.commandName ?? this.client.user?.username?.toLowerCase() ?? "bot";
-			if (isDismissal) {
-				await this.orchestrator.setDismissed(botName);
-			} else if (isActivation) {
-				await this.orchestrator.clearDismissed(botName);
-			}
-		}
-		
-		// Check if we're dismissed and not being activated
-		if (this.orchestrator && botMentioned && !isActivation) {
-			const botName = this.commandName ?? this.client.user?.username?.toLowerCase() ?? "bot";
-			if (this.orchestrator.isDismissed(botName)) {
-				// Just acknowledge briefly without full response
-				const scope = this.resolveScopeFromChannel(
-					message.guildId ?? null,
-					message.channelId,
-					message.channel,
-				);
-				const route = await this.getExistingRoute(scope);
-				if (route) {
-					await route.journal.append({
-						kind: "ambient",
-						sourceId: message.id,
-						routeKey: route.manifest.routeKey,
-						timestamp: Date.now(),
-						text: message.content ?? "",
-						authorId: message.author.id,
-						authorName: message.member?.displayName ?? message.author.displayName,
-					});
-				}
-				return;
-			}
-		}
-		
-		// Check if other bots are mentioned - if so, don't respond at all
+		// If another bot is mentioned and we're not mentioned, skip entirely
 		const otherBotMentioned = message.mentions.users?.some?.(user => user.bot && user.id !== this.client.user.id) ?? false;
-		
-		// If another bot is mentioned and we're not mentioned, skip processing
-		// but still journal as ambient context (unless we're dismissed)
-		if (otherBotMentioned && !botMentioned) {
-			const botName = this.commandName ?? this.client.user?.username?.toLowerCase() ?? "bot";
-			if (this.orchestrator?.isDismissed(botName)) {
-				return;
-			}
-			const scope = this.resolveScopeFromChannel(
-				message.guildId ?? null,
-				message.channelId,
-				message.channel,
-			);
-			const route = await this.getExistingRoute(scope);
-			if (route) {
-				await route.journal.append({
-					kind: "ambient",
-					sourceId: message.id,
-					routeKey: route.manifest.routeKey,
-					timestamp: Date.now(),
-					text: message.content ?? "",
-					authorId: message.author.id,
-					authorName: message.member?.displayName ?? message.author.displayName,
-				});
-			}
-			return;
-		}
+		if (otherBotMentioned && !botMentioned) return;
 		
 		if (!botMentioned && !isDm) {
 			const scope = this.resolveScopeFromChannel(
