@@ -106,6 +106,7 @@ export class RouteSessionHost {
 			agentDir: this.agentDir,
 			settingsManager,
 			noExtensions: !this.config.allowProjectExtensions,
+			disabledExtensions: this.config.disabledExtensions ?? [],
 			noPromptTemplates: true,
 			noThemes: true,
 			systemPrompt,
