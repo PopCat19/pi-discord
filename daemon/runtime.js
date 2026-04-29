@@ -971,7 +971,7 @@ export class PiDiscordDaemon {
 				return;
 			}
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
-			const clearJournal = interaction.options.getBoolean("journal") ?? false;
+			const clearJournal = interaction.options.getBoolean("journal") ?? true; // Default true for clean slate
 			const doClear = interaction.options.getBoolean("clear") ?? false;
 			const targetChannel = interaction.options.getChannel("channel");
 			
