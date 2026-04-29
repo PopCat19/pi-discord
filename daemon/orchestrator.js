@@ -183,6 +183,61 @@ export class SliceOfBreadOrchestrator {
 	}
 
 	/**
+	 * Check if there's an active scene turn for this bot to respond to.
+	 * @returns {{ shouldRespond: boolean, turnState?: Object }}
+	 */
+	checkSceneTurn() {
+		if (!this.sharedMemoryPath) return { shouldRespond: false };
+		
+		const data = this.loadSharedMemory();
+		const turnState = data.sceneTurn;
+		
+		if (!turnState) return { shouldRespond: false };
+		
+		// Check if this bot is next to speak
+		if (turnState.nextSpeaker?.toLowerCase() !== this.instanceName.toLowerCase()) {
+			return { shouldRespond: false };
+		}
+		
+		// Check if max turns reached
+		if (turnState.currentTurn >= turnState.maxTurns) {
+			// Clear the scene turn
+			delete data.sceneTurn;
+			this.saveSharedMemory(data);
+			return { shouldRespond: false };
+		}
+		
+		return { shouldRespond: true, turnState };
+	}
+
+	/**
+	 * Advance scene turn after this bot has responded.
+	 */
+	async advanceSceneTurn() {
+		if (!this.sharedMemoryPath) return;
+		
+		const data = this.loadSharedMemory();
+		const turnState = data.sceneTurn;
+		
+		if (!turnState) return;
+		
+		const currentIndex = turnState.participants.indexOf(this.instanceName.toLowerCase());
+		const nextIndex = (currentIndex + 1) % turnState.participants.length;
+		
+		turnState.currentTurn++;
+		turnState.nextSpeaker = turnState.participants[nextIndex];
+		
+		// Clear if max turns reached
+		if (turnState.currentTurn >= turnState.maxTurns) {
+			delete data.sceneTurn;
+		} else {
+			data.sceneTurn = turnState;
+		}
+		
+		await this.saveSharedMemory(data);
+	}
+
+	/**
 	 * Start the orchestrator.
 	 */
 	async start() {
@@ -643,7 +698,8 @@ export class SliceOfBreadOrchestrator {
 	 * @param {string} triggerType - "cron" | "rng" | "manual" | "bot-message"
 	 * @param {string} [customPrompt] - Optional custom prompt (for ad-hoc triggers)
 	 */
-	async triggerScene(sceneName, triggerType = "manual", customPrompt = null) {
+	async triggerScene(sceneName, triggerType = "manual", customPrompt = null, options = {}) {
+		const { participants = [], turns = 2, startedBy = null } = options;
 		const scene = this.config.scenes.find(s => s.name === sceneName);
 		
 		// For ad-hoc triggers with custom prompt, scene config is optional
@@ -664,8 +720,19 @@ export class SliceOfBreadOrchestrator {
 			}
 		}
 
-		// Check if this instance should speak (skip for ad-hoc triggers)
-		if (scene && scene.speaker !== this.instanceName) {
+		// Check if this instance should speak
+		// For manual scenes with participants, only speak if in the list
+		if (participants.length > 0) {
+			if (!participants.includes(this.instanceName.toLowerCase())) {
+				await this.logger.info("scene-skipped-not-participant", {
+					sceneName,
+					participants,
+					thisInstance: this.instanceName,
+				});
+				return;
+			}
+		} else if (scene && scene.speaker !== this.instanceName) {
+			// For configured scenes, check speaker
 			await this.logger.info("scene-skipped-wrong-speaker", {
 				sceneName,
 				speaker: scene.speaker,
@@ -732,6 +799,24 @@ export class SliceOfBreadOrchestrator {
 				content,
 				scene: sceneName,
 			});
+
+			// For multi-turn scenes with participants, store turn state
+			if (participants.length > 1 && turns > 1) {
+				const currentIndex = participants.indexOf(this.instanceName.toLowerCase());
+				const nextIndex = (currentIndex + 1) % participants.length;
+				const turnState = {
+					sceneName,
+					participants,
+					currentTurn: 1,
+					maxTurns: turns,
+					nextSpeaker: participants[nextIndex],
+					startedBy,
+					startedAt: Date.now(),
+				};
+				const data = this.loadSharedMemory();
+				data.sceneTurn = turnState;
+				await this.saveSharedMemory(data);
+			}
 
 			// Update state
 			this.state.lastScene = sceneName;

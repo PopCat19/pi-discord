@@ -1329,6 +1329,59 @@ export class PiDiscordDaemon {
 			return;
 		}
 
+		if (subcommand === "scene") {
+			const prompt = interaction.options.getString("prompt", true);
+			const context = interaction.options.getString("context") ?? "";
+			const participantsStr = interaction.options.getString("participants") ?? "";
+			const turns = interaction.options.getInteger("turns") ?? 2;
+			
+			// Parse participants
+			const participants = participantsStr
+				.split(",")
+				.map(p => p.trim().toLowerCase())
+				.filter(p => p.length > 0);
+			
+			// Create ephemeral reply first
+			await interaction.reply({
+				content: "Triggering scene...",
+				ephemeral: true,
+			});
+			
+			// Trigger scene via orchestrator
+			if (this.orchestrator && this.config.sliceOfBread?.enabled) {
+				const scenePrompt = context ? `${prompt}\n\nContext: ${context}` : prompt;
+				await this.orchestrator.triggerScene("manual", scenePrompt, {
+					participants,
+					turns,
+					startedBy: interaction.user.id,
+				});
+				await interaction.editReply({
+					content: `Scene triggered (${turns} turns${participants.length > 0 ? `, participants: ${participants.join(", ")}` : ""}): ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`,
+					ephemeral: true,
+				});
+			} else {
+				// Write trigger file for daemon to pick up
+				const triggersDir = path.join(this.paths.workspaceDir, "scene-triggers");
+				if (!existsSync(triggersDir)) {
+					mkdirSync(triggersDir, { recursive: true });
+				}
+				const triggerFile = path.join(triggersDir, `manual-${Date.now()}.json`);
+				writeFileSync(triggerFile, JSON.stringify({
+					scene: "manual",
+					prompt: context ? `${prompt}\n\nContext: ${context}` : prompt,
+					participants,
+					turns,
+					triggeredAt: Date.now(),
+					startedBy: interaction.user.id,
+				}), "utf8");
+				await interaction.editReply({
+					content: `Scene queued (${turns} turns${participants.length > 0 ? `, participants: ${participants.join(", ")}` : ""}): ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`,
+					ephemeral: true,
+				});
+			}
+			return;
+		}
+
 		if (subcommand !== "ask" && subcommand !== "routes") return;
 
 		const rawText = interaction.options.getString("text", true).trim();
@@ -2064,6 +2117,44 @@ export class PiDiscordDaemon {
 		// Determine if this bot should respond
 		const instanceTag = this.client.user?.tag?.split('#')[0]?.toLowerCase() ?? 'unknown';
 		const responders = config.responders ?? [];
+		
+		// Check for active scene turn first
+		let sceneTurn = null;
+		if (this.orchestrator) {
+			const turnCheck = this.orchestrator.checkSceneTurn();
+			if (turnCheck.shouldRespond) {
+				sceneTurn = turnCheck.turnState;
+			}
+		}
+		
+		// If scene turn, bypass normal followup checks
+		if (sceneTurn) {
+			try {
+				const session = await this.createOrchestratorSession();
+				const sharedContext = this.orchestrator.getSharedMemoryContext(10);
+				const prompt = `Continue the conversation. Recent messages:\n${sharedContext}\n\nRespond as your character. Keep it brief.`;
+				
+				let response = "";
+				const unsubscribe = session.subscribe((event) => {
+					if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+						response += event.assistantMessageEvent.delta;
+					}
+				});
+				await session.prompt(prompt);
+				unsubscribe();
+
+				if (response) {
+					await message.channel.send(response);
+					this.lastBotFollowup = Date.now();
+					await this.orchestrator.advanceSceneTurn();
+				}
+			} catch (err) {
+				await this.logger.error("scene-turn-failed", { error: String(err) });
+			}
+			return;
+		}
+		
+		// Normal followup logic
 		if (responders.length > 0 && !responders.includes(instanceTag)) return;
 
 		// Check for explicit mentions (name or patterns)
