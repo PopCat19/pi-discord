@@ -118,6 +118,7 @@ export class RouteSessionHost {
 							memoryPath: this.manifest.memoryPath,
 							journal: this.journal,
 							excludeSourceId: this.currentSourceId,
+							contextLimits: this.manifest.contextLimits,
 						}),
 					uploadFile: this.uploadFile,
 					addReaction: (emoji) => this.addReaction(emoji),

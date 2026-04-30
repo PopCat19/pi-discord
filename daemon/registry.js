@@ -165,5 +165,6 @@ export function createRouteManifest(input) {
 		primaryMessageId: undefined,
 		detailsThreadId: undefined,
 		currentAgent: undefined,
+		contextLimits: input.contextLimits,
 	};
 }

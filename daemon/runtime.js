@@ -449,6 +449,7 @@ export class PiDiscordDaemon {
 				workspaceMode,
 				executionRoot,
 				memoryPath,
+				contextLimits: override.contextLimits,
 			});
 			await ensureDir(executionRoot);
 			await ensureDir(path.dirname(memoryPath));

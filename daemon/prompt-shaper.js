@@ -1,5 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { MAX_CONTEXT_CHARS, MAX_CONTEXT_LINES } from "../lib/constants.js";
+import {
+	MAX_CONTEXT_CHARS,
+	MAX_CONTEXT_LINES,
+	DEFAULT_CONTEXT_CHARS,
+	DEFAULT_CONTEXT_LINES,
+} from "../lib/constants.js";
 
 /**
  * @param {{
@@ -39,11 +44,21 @@ export function buildPromptText(input) {
 }
 
 /**
- * @param {{ memory?: { getContext: () => string }, memoryPath?: string, journal: import('./journal.js').JournalStore, excludeSourceId?: string }} input
+ * @param {{ memory?: { getContext: () => string }, memoryPath?: string, journal: import('./journal.js').JournalStore, excludeSourceId?: string, contextLimits?: { lines?: number, chars?: number } }} input
  */
 export async function buildInjectedContext(input) {
+	// Apply configurable limits with upper bound guards
+	const maxLines = Math.min(
+		input.contextLimits?.lines ?? DEFAULT_CONTEXT_LINES,
+		MAX_CONTEXT_LINES,
+	);
+	const maxChars = Math.min(
+		input.contextLimits?.chars ?? DEFAULT_CONTEXT_CHARS,
+		MAX_CONTEXT_CHARS,
+	);
+
 	let memoryText = "";
-	
+
 	// Use ChannelMemory if available, otherwise fall back to file
 	if (input.memory) {
 		memoryText = input.memory.getContext();
@@ -57,7 +72,7 @@ export async function buildInjectedContext(input) {
 
 	const recentMessages = input.journal
 		.recent(
-			MAX_CONTEXT_LINES,
+			maxLines,
 			(entry) =>
 				(entry.kind === "ambient" ||
 					entry.kind === "inbound" ||
@@ -75,12 +90,12 @@ export async function buildInjectedContext(input) {
 	const blocks = [];
 	if (memoryText.trim()) {
 		blocks.push(
-			`Route memory:\n${memoryText.trim().slice(0, MAX_CONTEXT_CHARS)}`,
+			`Route memory:\n${memoryText.trim().slice(0, maxChars)}`,
 		);
 	}
 	if (recentMessages.trim()) {
 		blocks.push(
-			`Recent Discord context:\n${recentMessages.slice(0, MAX_CONTEXT_CHARS)}`,
+			`Recent Discord context:\n${recentMessages.slice(0, maxChars)}`,
 		);
 	}
 	return blocks.join("\n\n");
