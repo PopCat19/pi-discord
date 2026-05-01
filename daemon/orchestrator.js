@@ -338,9 +338,20 @@ export class SliceOfBreadOrchestrator {
 		const prompt = promptTemplate ??
 			"Another bot ({speaker}) posted: {content}\n\nReact or respond in character.";
 
-		const fullPrompt = prompt
+		let fullPrompt = prompt
 			.replace("{speaker}", speakerName)
 			.replace("{content}", content);
+
+		// Lounge mode: inject tone rules from config
+		const lounge = this.config.lounge;
+		if (lounge?.enabled ?? false) {
+			const loungeHint = [
+				lounge.requireWebSearch ? "WEB SEARCH FIRST." : null,
+				lounge.toneHint ?? "Punchy and casual.",
+				lounge.maxSentences ? `Max ${lounge.maxSentences} sentences.` : null,
+			].filter(Boolean).join(" ");
+			fullPrompt = loungeHint + "\n\n" + fullPrompt;
+		}
 
 		// Trigger the response
 		await this.triggerScene("bot-followup", "bot-message", fullPrompt);
@@ -857,6 +868,24 @@ export class SliceOfBreadOrchestrator {
 
 		lines.push(`Instruction: ${scene.prompt}`);
 		lines.push("");
+
+		// Lounge mode: inject tone rules from config
+		const lounge = this.config.lounge;
+		if (lounge?.enabled ?? false) {
+			if (lounge.requireWebSearch ?? false) {
+				lines.push("WEB SEARCH FIRST for accurate current info.");
+			}
+			if (lounge.toneHint) {
+				lines.push(lounge.toneHint);
+			}
+			if (lounge.maxSentences) {
+				lines.push(`Max ${lounge.maxSentences} sentences.`);
+			}
+			if (lounge.excludeTopics?.length) {
+				lines.push(`NO: ${lounge.excludeTopics.join(", ")}.`);
+			}
+			lines.push("");
+		}
 
 		if (sharedContext) {
 			lines.push("## Recent Conversation");
