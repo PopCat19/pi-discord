@@ -118,13 +118,8 @@ pi-discord halt <name>         Stop all runs and clear queue (admin)
 **Migrating from legacy:**
 
 ```bash
-# Stop legacy first
 pi-discord stop legacy
-
-# Migrate to named instance
 pi-discord migrate my-bot
-
-# Verify, then remove legacy
 rm -rf ~/.pi/agent/pi-discord
 ```
 
@@ -170,184 +165,6 @@ To inspect logs:
 /discord logs 120
 ```
 
-## Setting up the Discord app correctly
-
-This is the part that usually goes wrong. Here's a quick checklist, followed by detailed steps.
-
-### Quick checklist
-
-1. **Developer Portal** → Create Application
-2. **General Information** → Copy `Application ID`
-3. **Bot** → Create Bot → Copy `Token`
-4. **Bot** → Enable `Message Content Intent` ✓
-5. **OAuth2 → URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions: View Channels, Send Messages, Create Public Threads, Send Messages in Threads, Read Message History, Attach Files, Embed Links
-6. **Copy invite URL** → Add bot to your server
-7. **Discord Settings** → Enable Developer Mode → Right-click server → Copy Server ID
-
-### Detailed steps
-
-Go to the Discord Developer Portal at `https://discord.com/developers/applications` and create a new application. Give it a name that matches the bot you want to run.
-
-Open the application's `General Information` page. Copy the `Application ID`. You will put that into the `applicationId` field in the `pi-discord` config. You can ignore the `Public Key` for now because this package currently talks to Discord through the gateway rather than receiving webhook interactions directly.
-
-Open the `Bot` page and create a bot user if Discord has not done that already. Reset the token if needed, then copy the bot token. Put that into `botToken`.
-
-Still on the `Bot` page, decide whether you need the `Message Content Intent`.
-
-You should enable `Message Content Intent` if you want any of the following:
-
-- mention-triggered prompts that rely on full message content
-- ambient recent-channel context in normal guild channels
-- attachment ingestion from ordinary message events
-- a more natural “talk to the bot in chat” flow rather than slash-command-only usage
-
-If your bot is or becomes a verified bot in 100+ servers, Discord may require privileged-intent approval for full behavior in ordinary guild traffic. Without that approval, the safest expectation is degraded mode built around slash commands, DMs, and direct mentions.
-
-Go to `OAuth2` → `URL Generator`.
-
-Select these scopes:
-
-- `bot`
-- `applications.commands`
-
-Select permissions that let the bot operate in channels and threads. At minimum you will usually want:
-
-- `View Channels`
-- `Send Messages`
-- `Create Public Threads`
-- `Send Messages in Threads`
-- `Read Message History`
-- `Attach Files`
-- `Embed Links`
-
-If you want private-thread behavior in a locked-down server, add the thread permissions your server policy requires. Keep permissions minimal; the bot does not need broad moderation powers.
-
-Use the generated invite URL to add the bot to your server.
-
-After the bot is in the server, collect the guild ids you want to allow. In Discord, enable Developer Mode in advanced settings, then right-click the server and copy the server id. Add those to `allowedGuildIds` if you want an explicit allowlist.
-
-## Pi-side setup flow
-
-### Using the CLI (recommended)
-
-```bash
-# Create and configure a new bot instance
-pi-discord create my-bot
-pi-discord edit my-bot
-# Add botToken and applicationId to config
-pi-discord start my-bot
-```
-
-### Using Pi commands (legacy)
-
-Inside Pi:
-
-```text
-/discord setup
-```
-
-That prompts for the bot token, application id, and a comma-separated guild allowlist, then writes the JSON config file at:
-
-`~/.pi/agent/pi-discord/config.json`
-
-You can also edit the config directly with:
-
-```text
-/discord open-config
-```
-
-Or re-sync slash commands manually with:
-
-```text
-/discord sync-commands
-```
-
-## Config reference
-
-The runtime config lives at:
-
-`~/.pi/agent/pi-discord/config.json`
-
-Current fields:
-
-- `botToken`: Discord bot token from the Bot page
-- `applicationId`: Discord application id from General Information
-- `allowedGuildIds`: optional guild allowlist. Empty means any guild the bot joins is accepted
-- `adminUserIds`: Discord user ids allowed to stop active runs and reset routes
-- `dmAllowlistUserIds`: Discord user ids allowed to use the bot in DMs
-- `commandName`: slash-command root. Defaults to `pi`, which creates `/pi ask`, `/pi status`, `/pi stop`, and `/pi reset`
-- `registerCommandsGlobally`: if `true`, registers commands globally instead of guild-scoped
-- `syncCommandsOnStart`: if `true`, `/discord start` syncs slash commands before starting the daemon
-- `workspaceMode`: `dedicated` or `shared`
-- `sharedExecutionRoot`: execution root to use when `workspaceMode` is `shared`
-- `routeOverrides`: per-route overrides for execution root or workspace mode
-- `allowProjectExtensions`: if `true`, bot sessions load discovered extensions in addition to the built-in helper extension. This is less safe in headless mode
-- `disabledExtensions`: array of extension names to exclude (e.g. `["pi-lsp-extension"]`)
-- `showThinkingStatus`: if `false`, skips "Thinking..." status message, relies on typing indicator only (default: true)
-- `enableImageInput`: if `false`, image attachments stay on disk and are described in text instead of being sent as model image input
-- `enableDetailsThreads`: if `true`, the daemon will try to open and reuse a details thread for tool chatter and uploads
-- `globalConcurrency`: max routes processed at once
-- `queueLeaseMs`: queue lease duration before abandoned work is recovered
-- `primaryFlushMs`: cadence for throttled primary-message edits while the assistant is streaming
-- `defaultModel`: optional `provider/model-id` for new routes
-- `defaultThinkingLevel`: Pi thinking level for new routes
-- `systemPrompt`: optional system prompt override for routes without a specified agent
-- `systemPromptFile`: path to system prompt file (relative to config directory). Contents loaded at startup, overrides `systemPrompt`. Useful for long prompts.
-- `useThreadPersona`: if `true`, discard default Pi persona and let thread history define the persona for Pi tasks (git status, etc.)
-- `toolPermissions`: tool access control configuration
-  - `adminOnly`: array of tool names restricted to admin users (default: `["bash", "edit", "write"]`)
-  - `disabled`: array of tool names disabled for all users (default: `[]`)
-- `agents`: map of agent name to agent definition (see Agent System below)
-- `defaultAgent`: name of the default agent to use. Defaults to `"default"`
-- `sliceOfLife`: optional slice-of-life orchestrator config for ambient bot interactions (see Slice of Life below)
-- `routeCleanup`: auto-cleanup config for stale routes
-  - `enabled`: if `true`, enables auto-cleanup
-  - `maxAgeDays`: routes older than this are cleaned (default: 30)
-  - `onStartup`: if `true`, run cleanup on bot start (default: true)
-- `presence`: presence manager config for scheduled status changes
-- `botFollowup`: config for bot-to-bot followup messages
-- `processOfflineMentions`: if `true`, bot processes the most recent missed mention on startup (default: true)
-
-## Agent system
-
-Multiple agents can be defined in config, each with their own system prompt, model, and thinking level. This enables switching personalities or capabilities mid-route.
-
-**Agent config structure:**
-
-```json
-{
-  "agents": {
-    "assistant": {
-      "systemPrompt": "You are a helpful assistant.",
-      "defaultModel": "openai/gpt-4o",
-      "defaultThinkingLevel": "medium"
-    },
-    "code-reviewer": {
-      "systemPrompt": "You are a strict code reviewer. Be concise and thorough.",
-      "defaultModel": "anthropic/claude-sonnet-4",
-      "defaultThinkingLevel": "high"
-    }
-  },
-  "defaultAgent": "assistant"
-}
-```
-
-**Agent fields:**
-
-- `systemPrompt` (required): The system prompt for that agent
-- `defaultModel` (optional): Model override for this agent
-- `defaultThinkingLevel` (optional): Thinking level for this agent
-
-**Switching agents:**
-
-The bot session exposes a `setAgent` tool that allows switching agents during a conversation. The current agent is persisted in the route manifest and survives restarts.
-
-**Fallback behavior:**
-
-If no agent is specified or `defaultAgent` is not configured, routes use the top-level `systemPrompt` and `defaultModel` from config for backward compatibility.
-
 ## Discord commands and triggers
 
 Inside Discord, the package currently supports these slash subcommands under whatever `commandName` is configured:
@@ -391,24 +208,86 @@ Inside Pi, the extension exposes:
 - `/discord logs [lines]`
 - `/discord help`
 
-## Runtime layout
+## Config reference
 
-The package code stays in the extension directory. Mutable runtime state lives separately under:
+The runtime config lives at:
 
-**New instances:** `~/.pi/agent/pi-discord-instances/<name>/workspace/`
+`~/.pi/agent/pi-discord/config.json`
 
-**Legacy:** `~/.pi/agent/pi-discord/`
+Current fields:
 
-Each workspace contains:
+- `botToken`: Discord bot token from the Bot page
+- `applicationId`: Discord application id from General Information
+- `allowedGuildIds`: optional guild allowlist. Empty means any guild the bot joins is accepted
+- `adminUserIds`: Discord user ids allowed to stop active runs and reset routes
+- `dmAllowlistUserIds`: Discord user ids allowed to use the bot in DMs
+- `commandName`: slash-command root. Defaults to `pi`, which creates `/pi ask`, `/pi status`, `/pi stop`, and `/pi reset`
+- `registerCommandsGlobally`: if `true`, registers commands globally instead of guild-scoped
+- `syncCommandsOnStart`: if `true`, `/discord start` syncs slash commands before starting the daemon
+- `workspaceMode`: `dedicated` or `shared`
+- `sharedExecutionRoot`: execution root to use when `workspaceMode` is `shared`
+- `routeOverrides`: per-route overrides for execution root or workspace mode
+- `allowProjectExtensions`: if `true`, bot sessions load discovered extensions in addition to the built-in helper extension. This is less safe in headless mode
+- `disabledExtensions`: array of extension names to exclude (e.g. `["pi-lsp-extension"]`)
+- `showThinkingStatus`: if `false`, skips "Thinking..." status message, relies on typing indicator only (default: true)
+- `enableImageInput`: if `false`, image attachments stay on disk and are described in text instead of being sent as model image input
+- `enableDetailsThreads`: if `true`, the daemon will try to open and reuse a details thread for tool chatter and uploads
+- `globalConcurrency`: max routes processed at once
+- `queueLeaseMs`: queue lease duration before abandoned work is recovered
+- `primaryFlushMs`: cadence for throttled primary-message edits while the assistant is streaming
+- `defaultModel`: optional `provider/model-id` for new routes
+- `defaultThinkingLevel`: Pi thinking level for new routes
+- `systemPrompt`: optional system prompt override for routes without a specified agent
+- `systemPromptFile`: path to system prompt file (relative to config directory). Contents loaded at startup, overrides `systemPrompt`. Useful for long prompts.
+- `useThreadPersona`: if `true`, discard default Pi persona and let thread history define the persona for Pi tasks (git status, etc.)
+- `toolPermissions`: tool access control configuration
+  - `adminOnly`: array of tool names restricted to admin users (default: `["bash", "edit", "write"]`)
+  - `disabled`: array of tool names disabled for all users (default: `[]`)
+- `agents`: map of agent name to agent definition (see Agent System below)
+- `defaultAgent`: name of the default agent to use. Defaults to `"default"`
+- `sliceOfLife`: optional slice-of-life orchestrator config for ambient bot interactions (see Slice of Life below)
+- `routeCleanup`: auto-cleanup config for stale routes
+- `presence`: presence manager config for scheduled status changes
+- `botFollowup`: config for bot-to-bot followup messages
+- `processOfflineMentions`: if `true`, bot processes the most recent missed mention on startup (default: true)
 
-- `config.json`
-- `logs/daemon.log`
-- `run/status.json`
-- `run/daemon.pid` and lock state
-- `routes/` with per-route manifests, journals, attachments, queue state, and route session files
-- `workspaces/` with dedicated execution roots for dedicated-mode routes
+## Agent system
 
-This separation is intentional. Runtime state should not be mixed into the extension package itself.
+Multiple agents can be defined in config, each with their own system prompt, model, and thinking level. This enables switching personalities or capabilities mid-route.
+
+**Agent config structure:**
+
+```json
+{
+  "agents": {
+    "assistant": {
+      "systemPrompt": "You are a helpful assistant.",
+      "defaultModel": "openai/gpt-4o",
+      "defaultThinkingLevel": "medium"
+    },
+    "code-reviewer": {
+      "systemPrompt": "You are a strict code reviewer. Be concise and thorough.",
+      "defaultModel": "anthropic/claude-sonnet-4",
+      "defaultThinkingLevel": "high"
+    }
+  },
+  "defaultAgent": "assistant"
+}
+```
+
+**Agent fields:**
+
+- `systemPrompt` (required): The system prompt for that agent
+- `defaultModel` (optional): Model override for this agent
+- `defaultThinkingLevel` (optional): Thinking level for this agent
+
+**Switching agents:**
+
+The bot session exposes a `setAgent` tool that allows switching agents during a conversation. The current agent is persisted in the route manifest and survives restarts.
+
+**Fallback behavior:**
+
+If no agent is specified or `defaultAgent` is not configured, routes use the top-level `systemPrompt` and `defaultModel` from config for backward compatibility.
 
 ## How routing works
 
@@ -440,8 +319,6 @@ Routes use a compressing memory system that automatically summarizes old convers
 
 ### Stale route cleanup
 
-Routes can accumulate over time. Use `pi-discord routes` to manage:
-
 ```bash
 pi-discord routes plana           # List all routes
 pi-discord routes plana 30        # Wipe routes older than 30 days
@@ -457,8 +334,6 @@ Or enable auto-cleanup in config:
   "onStartup": true
 }
 ```
-
-This automatically deletes routes with no activity for the specified days on startup. The route manifest keeps the stable mapping between the route key and the current session file, plus message/thread ids used for outbound rendering.
 
 ## Session behavior
 
@@ -479,25 +354,28 @@ If an attachment is an image and the selected model supports image input, the da
 
 For outbound files, the bot session can use the `discord_upload` tool to post a generated file back into the current Discord surface or details thread.
 
-## Observability and logs
+## Safety model
 
-The daemon writes structured JSON log lines to:
+DMs are deny-by-default and only open to ids listed in `dmAllowlistUserIds`.
 
-`~/.pi/agent/pi-discord/logs/daemon.log`
+Stop and reset controls are restricted to ids listed in `adminUserIds`.
 
-The current extension surfaces those logs with:
+**Tool permissions** restrict dangerous operations:
 
-```text
-/discord logs 200
-```
+- `toolPermissions.adminOnly`: Tools only usable by admins (default: `bash`, `edit`, `write`)
+- `toolPermissions.disabled`: Tools disabled for all users
 
-Daemon health is summarized in:
+Non-admin users in allowlisted guilds can use the bot but cannot execute admin-restricted tools. When they attempt to use one, they receive a clear message:
 
-```text
-/discord status
-```
+> Tool 'bash' is restricted to server admins only. Ask a server admin to perform this action.
 
-which reports whether the daemon is running, its pid, known route count, and currently active runs.
+**Role mentions**: Role mentions trigger bot responses when the bot has that role assigned. The bot checks `message.mentions.roles` for roles it possesses, enabling team-based access patterns.
+
+**Followup detection**: After slash commands or mentions, the bot creates a context window where followup messages from the same user are automatically enqueued.
+
+Project extensions are off by default in bot sessions because many extensions assume an interactive TUI and human supervision.
+
+The package stores route state separately from the extension package so updates or reinstalls do not trample mutable bot data.
 
 ## Implementation details
 
@@ -554,19 +432,10 @@ The daemon includes an optional "Slice of Bread" orchestrator that handles ambie
 }
 ```
 
-**Fields:**
-- `channelId`: The bread channel ID
-- `sharedMemoryPath`: Path for cross-instance shared memory file
-- `scenes`: Array of scene configs with `name`, `trigger` (cron or rng), `speaker`, `prompt`
-- `botFollowup.maxTurns`: Max back-and-forth turns between bots (default: 1)
-- `botFollowup.cooldown`: Time between bot responses in ms (default: 60000)
-
 ### World News Enrichment
+
 The orchestrator can fetch real-world news to give characters "ambient awareness" of events (science, tech, culture).
 
-To enable:
-1. Run a local [SearXNG](https://github.com/searxng/searxng) instance.
-2. In `config.json`, add:
 ```json
 "worldNews": {
     "enabled": true,
@@ -577,72 +446,26 @@ To enable:
 }
 ```
 
-## Safety model
+## Status
 
-A few constraints are deliberate.
+✓ Working - tested with SillyTavern and multi-bot configurations.
 
-DMs are deny-by-default and only open to ids listed in `dmAllowlistUserIds`.
+Completed:
+- [x] Discord gateway connection with detached daemon
+- [x] Slash commands and @mention ingress
+- [x] Per-route sessions, memory, and journaling
+- [x] Multi-instance support with auto port assignment
+- [x] Agent system with mid-route switching
+- [x] Tool permissions system (admin/disabled)
+- [x] Slice of Bread orchestrator with world news enrichment
 
-Stop and reset controls are restricted to ids listed in `adminUserIds`.
+TODO:
+- [ ] Webhook ingestion support
+- [ ] launchd/systemd service generation
+- [ ] Full setup wizard
 
-**Tool permissions** restrict dangerous operations:
+## License
 
-- `toolPermissions.adminOnly`: Tools only usable by admins (default: `bash`, `edit`, `write`)
-- `toolPermissions.disabled`: Tools disabled for all users
+MIT
 
-Non-admin users in allowlisted guilds can use the bot but cannot execute admin-restricted tools. When they attempt to use one, they receive a clear message:
-
-> Tool 'bash' is restricted to server admins only. Ask a server admin to perform this action.
-
-This prevents RCE from arbitrary guild members.
-
-**Role mentions**: Role mentions trigger bot responses when the bot has that role assigned. The bot checks `message.mentions.roles` for roles it possesses, enabling team-based access patterns (e.g., `@AdminRole check the logs`).
-
-**Followup detection**: After slash commands or mentions, the bot creates a context window where followup messages from the same user are automatically enqueued, enabling natural conversation flow without repeated mentions.
-
-Project extensions are off by default in bot sessions because many extensions assume an interactive TUI and human supervision.
-
-The package stores route state separately from the extension package so updates or reinstalls do not trample mutable bot data.
-
-## Limitations
-
-No `launchd` or systemd service generation yet. No UI for editing route overrides. No full setup wizard beyond `/discord setup`. Some config fields exist for architectural reasons but aren't fully exercised. Gateway-only for now, no webhook ingestion.
-
-## Troubleshooting
-
-If `/discord start` fails immediately, run:
-
-```text
-/discord status
-/discord logs 200
-```
-
-If slash commands do not appear, check these in order:
-
-- `applicationId` is correct
-- the bot token belongs to the same application
-- the bot was invited with `applications.commands`
-- the bot is in one of the `allowedGuildIds`, or `registerCommandsGlobally` is enabled
-- command sync did not fail during `/discord start`
-
-If mentions do nothing, check:
-
-- the bot can read the channel
-- `Message Content Intent` is enabled where needed
-- the daemon is running
-- the guild is allowlisted if you are using `allowedGuildIds`
-
-If DMs do nothing, check that the sender id is listed in `dmAllowlistUserIds`.
-
-If stop buttons or the `/pi reset` command refuse to work, check that the requester id is in `adminUserIds`.
-
-## Development
-
-Install dependencies and run the test suite:
-
-```bash
-npm install
-npm test
-```
-
-The current test coverage focuses on config validation and recovery paths, route identity and initialization, queue/registry/manifest persistence hardening, interaction scoping, daemon status handling, and core authorization behavior.
+<!-- generated: 20260503-9359e28 -->
