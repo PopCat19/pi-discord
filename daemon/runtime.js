@@ -974,7 +974,7 @@ export class PiDiscordDaemon {
 				return;
 			}
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
-			const keepMessages = interaction.options.getBoolean("keep-messages") ?? false;
+			const deleteMessages = interaction.options.getBoolean("delete-messages") ?? false;
 			const targetChannel = interaction.options.getChannel("channel");
 			
 			// Use target channel or current channel
@@ -1046,8 +1046,8 @@ export class PiDiscordDaemon {
 					} catch (e) {}
 				}
 				
-				// Delete bot messages (skip if keep-messages)
-				if (!keepMessages) {
+				// Delete bot messages (only if delete-messages flag)
+				if (deleteMessages) {
 					try {
 						const messages = await channel.messages.fetch({ limit: 50 });
 						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
