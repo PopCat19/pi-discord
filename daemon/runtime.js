@@ -476,10 +476,12 @@ export class PiDiscordDaemon {
 		await queue.recoverExpiredLeases();
 		const journal = new JournalStore(routePaths.journalPath);
 		await journal.load();
-		const memory = new ChannelMemory({
-			path: routePaths.sharedMemoryPath.replace(".md", ".json"),
-			maxTokens: 8192,
-		});
+		const memory = this.config.enableChannelMemory
+			? new ChannelMemory({
+				path: routePaths.sharedMemoryPath.replace(".md", ".json"),
+				maxTokens: 8192,
+			})
+			: undefined;
 		const renderer = new DiscordRenderer({
 			client: this.client,
 			manifest,
@@ -972,6 +974,7 @@ export class PiDiscordDaemon {
 				return;
 			}
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
+			const keepMessages = interaction.options.getBoolean("keep-messages") ?? false;
 			const targetChannel = interaction.options.getChannel("channel");
 			
 			// Use target channel or current channel
@@ -1043,15 +1046,17 @@ export class PiDiscordDaemon {
 					} catch (e) {}
 				}
 				
-				// Delete bot messages
-				try {
-					const messages = await channel.messages.fetch({ limit: 50 });
-					const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
-					for (const msg of botMsgs.values()) {
-						try { await msg.delete(); } catch (e) {}
-					}
-					message += `Cleared ${botMsgs.size} messages. `;
-				} catch (e) {}
+				// Delete bot messages (skip if keep-messages)
+				if (!keepMessages) {
+					try {
+						const messages = await channel.messages.fetch({ limit: 50 });
+						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
+						for (const msg of botMsgs.values()) {
+							try { await msg.delete(); } catch (e) {}
+						}
+						message += `Cleared ${botMsgs.size} messages. `;
+					} catch (e) {}
+				}
 				
 				// Send separator
 				await channel.send({
