@@ -5,7 +5,7 @@ import {
 	ModelRegistry,
 	SessionManager,
 	SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { pathExists } from "../lib/fs.js";
 import { createHeadlessUi } from "./headless-ui.js";
 import { buildInjectedContext } from "./prompt-shaper.js";

@@ -1,4 +1,4 @@
-/** @typedef {import("@mariozechner/pi-coding-agent").ExtensionAPI} ExtensionAPI */
+/** @typedef {import("@earendil-works/pi-coding-agent").ExtensionAPI} ExtensionAPI */
 
 import { readFile } from "node:fs/promises";
 import {

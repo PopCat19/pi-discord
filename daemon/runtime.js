@@ -16,7 +16,7 @@ import {
 	ModelRegistry,
 	SessionManager,
 	SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { ensureDir, pathExists, removeIfExists, writeJson } from "../lib/fs.js";
 import { getRoutePaths } from "../lib/paths.js";
 import { authorizeInteraction } from "./authz.js";
