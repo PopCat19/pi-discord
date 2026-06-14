@@ -23,10 +23,7 @@ export function authorizeInteraction(subject, config) {
 		};
 	}
 
-	if (
-		config.allowedGuildIds.length > 0 &&
-		!config.allowedGuildIds.includes(guildId)
-	) {
+	if (config.allowedGuildIds.length > 0 && !config.allowedGuildIds.includes(guildId)) {
 		return { allowed: false, reason: `Guild ${guildId} is not allowlisted.` };
 	}
 

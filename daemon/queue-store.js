@@ -12,36 +12,23 @@ import { ensureDir, readJson, writeJson } from "../lib/fs.js";
  * @property {{ workerId: string, acquiredAt: number, expiresAt: number } | undefined} lease
  */
 
-const QUEUE_STATES = new Set([
-	"queued",
-	"leased",
-	"running",
-	"completed",
-	"failed",
-	"cancelled",
-]);
+const QUEUE_STATES = new Set(["queued", "leased", "running", "completed", "failed", "cancelled"]);
 
 function normalizeAttachment(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value))
-		return undefined;
-	if (typeof value.path !== "string" || typeof value.name !== "string")
-		return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (typeof value.path !== "string" || typeof value.name !== "string") return undefined;
 	return {
 		path: value.path,
 		name: value.name,
-		contentType:
-			typeof value.contentType === "string" ? value.contentType : undefined,
+		contentType: typeof value.contentType === "string" ? value.contentType : undefined,
 		isImage: Boolean(value.isImage),
 	};
 }
 
 function normalizeSource(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value))
-		return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	if (
-		(value.kind !== "message" &&
-			value.kind !== "interaction" &&
-			value.kind !== "trigger") ||
+		(value.kind !== "message" && value.kind !== "interaction" && value.kind !== "trigger") ||
 		typeof value.sourceId !== "string" ||
 		typeof value.userId !== "string" ||
 		typeof value.channelId !== "string" ||
@@ -62,13 +49,8 @@ function normalizeSource(value) {
 }
 
 function normalizeLease(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value))
-		return undefined;
-	if (
-		typeof value.workerId !== "string" ||
-		typeof value.acquiredAt !== "number" ||
-		typeof value.expiresAt !== "number"
-	) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (typeof value.workerId !== "string" || typeof value.acquiredAt !== "number" || typeof value.expiresAt !== "number") {
 		return undefined;
 	}
 	return {
@@ -79,36 +61,21 @@ function normalizeLease(value) {
 }
 
 function normalizeItem(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value))
-		return undefined;
-	if (typeof value.id !== "string" || !QUEUE_STATES.has(value.state))
-		return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (typeof value.id !== "string" || !QUEUE_STATES.has(value.state)) return undefined;
 	const source = normalizeSource(value.source);
 	const payload =
-		value.payload &&
-		typeof value.payload === "object" &&
-		!Array.isArray(value.payload)
+		value.payload && typeof value.payload === "object" && !Array.isArray(value.payload)
 			? {
-					rawText:
-						typeof value.payload.rawText === "string"
-							? value.payload.rawText
-							: "",
-					promptText:
-						typeof value.payload.promptText === "string"
-							? value.payload.promptText
-							: "",
-					attachments: Array.isArray(value.payload.attachments)
-						? value.payload.attachments.map(normalizeAttachment).filter(Boolean)
-						: [],
+					rawText: typeof value.payload.rawText === "string" ? value.payload.rawText : "",
+					promptText: typeof value.payload.promptText === "string" ? value.payload.promptText : "",
+					attachments: Array.isArray(value.payload.attachments) ? value.payload.attachments.map(normalizeAttachment).filter(Boolean) : [],
 				}
 			: undefined;
 	if (!source || !payload) return undefined;
 
 	const lease = normalizeLease(value.lease);
-	const state =
-		(value.state === "leased" || value.state === "running") && !lease
-			? "queued"
-			: value.state;
+	const state = (value.state === "leased" || value.state === "running") && !lease ? "queued" : value.state;
 	const error =
 		(value.state === "leased" || value.state === "running") && !lease
 			? "Recovered malformed queued work without a valid lease."
@@ -132,9 +99,7 @@ function normalizeQueueData(value) {
 	}
 	return {
 		version: 1,
-		items: Array.isArray(value.items)
-			? value.items.map(normalizeItem).filter(Boolean)
-			: [],
+		items: Array.isArray(value.items) ? value.items.map(normalizeItem).filter(Boolean) : [],
 	};
 }
 
@@ -150,9 +115,7 @@ export class RouteQueueStore {
 	}
 
 	async load() {
-		this.data = normalizeQueueData(
-			await readJson(this.filePath, { version: 1, items: [] }),
-		);
+		this.data = normalizeQueueData(await readJson(this.filePath, { version: 1, items: [] }));
 		return this.data;
 	}
 
@@ -166,9 +129,7 @@ export class RouteQueueStore {
 	}
 
 	hasSource(sourceId) {
-		return this.data.items.some(
-			(item) => item.source.sourceId === sourceId && item.state !== "cancelled",
-		);
+		return this.data.items.some((item) => item.source.sourceId === sourceId && item.state !== "cancelled");
 	}
 
 	/**
@@ -188,19 +149,14 @@ export class RouteQueueStore {
 	}
 
 	async replaceQueuedBySource(sourceId, updater) {
-		const item = this.data.items.find(
-			(entry) => entry.source.sourceId === sourceId && entry.state === "queued",
-		);
+		const item = this.data.items.find((entry) => entry.source.sourceId === sourceId && entry.state === "queued");
 		if (!item) return undefined;
 		updater(item);
 		await this.save();
 		return item;
 	}
 
-	async cancelQueuedBySource(
-		sourceId,
-		reason = "Cancelled by transport event.",
-	) {
+	async cancelQueuedBySource(sourceId, reason = "Cancelled by transport event.") {
 		let changed = false;
 		for (const item of this.data.items) {
 			if (item.source.sourceId === sourceId && item.state === "queued") {
@@ -215,11 +171,7 @@ export class RouteQueueStore {
 	async recoverExpiredLeases(now = Date.now()) {
 		let changed = false;
 		for (const item of this.data.items) {
-			if (
-				(item.state === "leased" || item.state === "running") &&
-				item.lease &&
-				item.lease.expiresAt <= now
-			) {
+			if ((item.state === "leased" || item.state === "running") && item.lease && item.lease.expiresAt <= now) {
 				item.state = "queued";
 				item.lease = undefined;
 				item.error = "Recovered abandoned work after lease expiry.";

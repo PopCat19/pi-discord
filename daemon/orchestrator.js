@@ -1,9 +1,10 @@
+import { exec as execCb } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile as writeFileAsync } from "node:fs/promises";
 import path from "node:path";
-import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import { ChannelMemory } from "../lib/channel-memory.js";
+
 const execAsync = promisify(execCb);
 
 /**
@@ -118,10 +119,7 @@ export class SliceOfBreadOrchestrator {
 	 * Save orchestrator state to disk.
 	 */
 	async saveState() {
-		await writeFileAsync(
-			`${this.paths.workspaceDir}/${STATE_FILE}`,
-			JSON.stringify(this.state, null, "\t")
-		);
+		await writeFileAsync(`${this.paths.workspaceDir}/${STATE_FILE}`, JSON.stringify(this.state, null, "\t"));
 	}
 
 	/**
@@ -176,10 +174,12 @@ export class SliceOfBreadOrchestrator {
 		const data = this.loadSharedMemory();
 		const entries = (data.entries ?? []).slice(-maxEntries);
 		if (entries.length === 0) return "";
-		return entries.map(e => {
-			const time = new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-			return `[${time}] ${e.speaker}: ${e.content.slice(0, 200)}`;
-		}).join("\n");
+		return entries
+			.map((e) => {
+				const time = new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+				return `[${time}] ${e.speaker}: ${e.content.slice(0, 200)}`;
+			})
+			.join("\n");
 	}
 
 	/**
@@ -188,17 +188,17 @@ export class SliceOfBreadOrchestrator {
 	 */
 	checkSceneTurn() {
 		if (!this.sharedMemoryPath) return { shouldRespond: false };
-		
+
 		const data = this.loadSharedMemory();
 		const turnState = data.sceneTurn;
-		
+
 		if (!turnState) return { shouldRespond: false };
-		
+
 		// Check if this bot is next to speak
 		if (turnState.nextSpeaker?.toLowerCase() !== this.instanceName.toLowerCase()) {
 			return { shouldRespond: false };
 		}
-		
+
 		// Check if max turns reached
 		if (turnState.currentTurn >= turnState.maxTurns) {
 			// Clear the scene turn
@@ -206,7 +206,7 @@ export class SliceOfBreadOrchestrator {
 			this.saveSharedMemory(data);
 			return { shouldRespond: false };
 		}
-		
+
 		return { shouldRespond: true, turnState };
 	}
 
@@ -215,25 +215,25 @@ export class SliceOfBreadOrchestrator {
 	 */
 	async advanceSceneTurn() {
 		if (!this.sharedMemoryPath) return;
-		
+
 		const data = this.loadSharedMemory();
 		const turnState = data.sceneTurn;
-		
+
 		if (!turnState) return;
-		
+
 		const currentIndex = turnState.participants.indexOf(this.instanceName.toLowerCase());
 		const nextIndex = (currentIndex + 1) % turnState.participants.length;
-		
+
 		turnState.currentTurn++;
 		turnState.nextSpeaker = turnState.participants[nextIndex];
-		
+
 		// Clear if max turns reached
 		if (turnState.currentTurn >= turnState.maxTurns) {
 			delete data.sceneTurn;
 		} else {
 			data.sceneTurn = turnState;
 		}
-		
+
 		await this.saveSharedMemory(data);
 	}
 
@@ -248,7 +248,7 @@ export class SliceOfBreadOrchestrator {
 
 		await this.logger.info("orchestrator-started", {
 			channelId: this.config.channelId,
-			scenes: this.config.scenes.map(s => s.name),
+			scenes: this.config.scenes.map((s) => s.name),
 		});
 
 		// Start cron timers
@@ -261,16 +261,12 @@ export class SliceOfBreadOrchestrator {
 		// Start periodic RNG checks
 		const checkIntervalMs = this.config.checkInterval ?? 60000;
 		this.checkInterval = setInterval(() => {
-			this.checkRngTriggers().catch(err =>
-				this.logger.error("rng-check-failed", { error: String(err) })
-			);
+			this.checkRngTriggers().catch((err) => this.logger.error("rng-check-failed", { error: String(err) }));
 		}, checkIntervalMs);
 
 		// Check scene triggers more frequently for responsiveness
 		this.sceneTriggerInterval = setInterval(() => {
-			this.checkSceneTriggers().catch(err =>
-				this.logger.error("scene-trigger-check-failed", { error: String(err) })
-			);
+			this.checkSceneTriggers().catch((err) => this.logger.error("scene-trigger-check-failed", { error: String(err) }));
 		}, 5000); // Check every 5 seconds
 
 		// Start world news refresh if enabled
@@ -278,9 +274,7 @@ export class SliceOfBreadOrchestrator {
 			await this.refreshWorldNews();
 			const newsRefreshMs = this.worldNewsConfig.refreshInterval ?? 21600000; // 6h default
 			this.newsRefreshTimer = setInterval(() => {
-				this.refreshWorldNews().catch(err =>
-					this.logger.error("news-refresh-failed", { error: String(err) })
-				);
+				this.refreshWorldNews().catch((err) => this.logger.error("news-refresh-failed", { error: String(err) }));
 			}, newsRefreshMs);
 		}
 	}
@@ -296,21 +290,21 @@ export class SliceOfBreadOrchestrator {
 		// Check cooldown for bot messages (shorter than regular cooldown)
 		const botCooldown = this.config.botFollowup.cooldown ?? 60000; // 1 minute default
 		const maxTurns = this.config.botFollowup.maxTurns ?? 1;
-		
+
 		// Track conversation turns by checking recent bot messages
 		const recentTurns = this.state.recentBotTurns ?? [];
 		const now = Date.now();
-		
+
 		// Count turns in the last 5 minutes (active conversation window)
 		const conversationWindow = 5 * 60 * 1000;
-		const activeTurns = recentTurns.filter(t => now - t.time < conversationWindow);
-		const currentChainLength = activeTurns.filter(t => t.chain === this.state.currentChainId).length;
-		
+		const activeTurns = recentTurns.filter((t) => now - t.time < conversationWindow);
+		const currentChainLength = activeTurns.filter((t) => t.chain === this.state.currentChainId).length;
+
 		// Generate new chain ID if starting fresh
 		if (activeTurns.length === 0 || now - (this.state.lastBotMessageTime ?? 0) > botCooldown) {
 			this.state.currentChainId = now.toString();
 		}
-		
+
 		// Check if we've hit max turns for this chain
 		if (currentChainLength >= maxTurns) {
 			return;
@@ -327,20 +321,15 @@ export class SliceOfBreadOrchestrator {
 		// Build prompt with context of the other bot's message
 		const speakerName = message.author.username;
 		const content = message.content || "(no text content)";
-		const isMention = this.config.botFollowup.mentionPatterns?.some(p => 
-			content.toLowerCase().includes(p.toLowerCase())
-		);
-		
-		const promptTemplate = isMention 
+		const isMention = this.config.botFollowup.mentionPatterns?.some((p) => content.toLowerCase().includes(p.toLowerCase()));
+
+		const promptTemplate = isMention
 			? (this.config.botFollowup.mentionPromptTemplate ?? this.config.botFollowup.promptTemplate)
 			: this.config.botFollowup.promptTemplate;
-		
-		const prompt = promptTemplate ??
-			"Another bot ({speaker}) posted: {content}\n\nReact or respond in character.";
 
-		let fullPrompt = prompt
-			.replace("{speaker}", speakerName)
-			.replace("{content}", content);
+		const prompt = promptTemplate ?? "Another bot ({speaker}) posted: {content}\n\nReact or respond in character.";
+
+		let fullPrompt = prompt.replace("{speaker}", speakerName).replace("{content}", content);
 
 		// Lounge mode: inject tone rules from config
 		const lounge = this.config.lounge;
@@ -349,7 +338,9 @@ export class SliceOfBreadOrchestrator {
 				lounge.requireWebSearch ? "WEB SEARCH FIRST." : null,
 				lounge.toneHint ?? "Punchy and casual.",
 				lounge.maxSentences ? `Max ${lounge.maxSentences} sentences.` : null,
-			].filter(Boolean).join(" ");
+			]
+				.filter(Boolean)
+				.join(" ");
 			fullPrompt = loungeHint + "\n\n" + fullPrompt;
 		}
 
@@ -359,8 +350,8 @@ export class SliceOfBreadOrchestrator {
 		// Update state - track this turn
 		this.state.lastBotMessageTime = now;
 		this.state.recentBotTurns = [
-			...(recentTurns.filter(t => now - t.time < conversationWindow)),
-			{ time: now, chain: this.state.currentChainId, speaker: this.instanceName }
+			...recentTurns.filter((t) => now - t.time < conversationWindow),
+			{ time: now, chain: this.state.currentChainId, speaker: this.instanceName },
 		].slice(-20); // Keep last 20 turns
 		await this.saveState();
 	}
@@ -397,24 +388,24 @@ export class SliceOfBreadOrchestrator {
 		const memory = this.memory.getContext();
 		const baseSchedule = this.presenceConfig?.base ?? this.getDefaultPresenceBase();
 		const sceneEffects = this.getScenePresenceEffects();
-		
+
 		// Apply scene effects to base schedule
-		const contextualSchedule = baseSchedule.map(marker => {
+		const contextualSchedule = baseSchedule.map((marker) => {
 			// Check if any scene effect modifies this marker
-			const effect = sceneEffects.find(e => e.targetMarker === marker.name);
+			const effect = sceneEffects.find((e) => e.targetMarker === marker.name);
 			if (effect) {
 				return { ...marker, ...effect.override };
 			}
 			return marker;
 		});
-		
+
 		await this.logger.info("presence-schedule-generated", {
-			markers: contextualSchedule.map(m => m.name),
+			markers: contextualSchedule.map((m) => m.name),
 		});
-		
+
 		return contextualSchedule;
 	}
-	
+
 	/**
 	 * Get default presence base schedule.
 	 */
@@ -427,14 +418,14 @@ export class SliceOfBreadOrchestrator {
 			{ name: "evening", status: "idle", activity: "Power save", time: "22:00" },
 		];
 	}
-	
+
 	/**
 	 * Get presence effects from scenes that have them.
 	 */
 	getScenePresenceEffects() {
 		const effects = [];
 		const now = Date.now();
-		
+
 		for (const scene of this.config.scenes) {
 			if (scene.presenceEffect) {
 				const lastTrigger = this.state.lastTriggers[scene.name] ?? 0;
@@ -448,7 +439,7 @@ export class SliceOfBreadOrchestrator {
 				}
 			}
 		}
-		
+
 		return effects;
 	}
 
@@ -472,12 +463,10 @@ export class SliceOfBreadOrchestrator {
 
 		// Get recent topics to avoid
 		const memorySize = this.config.topicMemorySize ?? 10;
-		const recent = this.state.recentTopics
-			.slice(-memorySize)
-			.map(r => r.topic);
+		const recent = this.state.recentTopics.slice(-memorySize).map((r) => r.topic);
 
 		// Find topics not recently used
-		const available = topicPool.filter(t => !recent.includes(t));
+		const available = topicPool.filter((t) => !recent.includes(t));
 
 		// If all topics exhausted, use full pool (cycle reset)
 		const candidates = available.length > 0 ? available : topicPool;
@@ -509,7 +498,7 @@ export class SliceOfBreadOrchestrator {
 		if (!this.getSession) return null;
 
 		const memoryContext = this.memory.getContext();
-		const recent = this.state.recentTopics.map(r => r.topic).slice(-5);
+		const recent = this.state.recentTopics.map((r) => r.topic).slice(-5);
 
 		const prompt = [
 			`Scene: ${scene.name}`,
@@ -518,12 +507,14 @@ export class SliceOfBreadOrchestrator {
 			memoryContext ? `Context from memory:\n${memoryContext.slice(0, 500)}` : null,
 			"",
 			"Reply with ONLY the topic, nothing else.",
-		].filter(Boolean).join("\n");
+		]
+			.filter(Boolean)
+			.join("\n");
 
 		try {
 			const session = await this.getSession();
 			const result = await session.send(prompt);
-			const topic = (typeof result === "string" ? result : result.text ?? "").trim().slice(0, 50);
+			const topic = (typeof result === "string" ? result : (result.text ?? "")).trim().slice(0, 50);
 
 			if (topic) {
 				this.state.recentTopics.push({
@@ -548,24 +539,18 @@ export class SliceOfBreadOrchestrator {
 		try {
 			if (!this.worldNewsConfig.enabled) return;
 
-			const query = encodeURIComponent(
-				this.worldNewsConfig.searchQuery ??
-				"interesting non-political news science technology culture discoveries"
-			);
-			
+			const query = encodeURIComponent(this.worldNewsConfig.searchQuery ?? "interesting non-political news science technology culture discoveries");
+
 			// Use configured endpoint or default to common SearXNG local port
 			const endpoint = this.worldNewsConfig.endpoint ?? "http://127.0.0.1:8080";
 			const searxUrl = `${endpoint.replace(/\/$/, "")}/search?q=${query}&format=json&categories=news`;
 
-			const { stdout } = await execAsync(
-				`curl -s --max-time 5 "${searxUrl}"`,
-				{ timeout: 7000 }
-			);
+			const { stdout } = await execAsync(`curl -s --max-time 5 "${searxUrl}"`, { timeout: 7000 });
 			const data = JSON.parse(stdout);
 			const results = data?.results ?? [];
 			const headlines = results
-				.filter(r => r.title && !this.isPolitical(r.title))
-				.map(r => r.title.trim())
+				.filter((r) => r.title && !this.isPolitical(r.title))
+				.map((r) => r.title.trim())
 				.slice(0, this.worldNewsConfig.maxItems ?? 5);
 
 			if (headlines.length > 0) {
@@ -587,14 +572,32 @@ export class SliceOfBreadOrchestrator {
 	 */
 	isPolitical(text) {
 		const politicalTerms = [
-			"election", "president", "congress", "senate", "parliament",
-			"vote", "voting", "campaign", "democrat", "republican",
-			"sanction", "tariff", "war", "military", "invasion",
-			"protest", "impeach", "bill passes", "legislation",
-			"prime minister", "administration", "regime", "coup",
+			"election",
+			"president",
+			"congress",
+			"senate",
+			"parliament",
+			"vote",
+			"voting",
+			"campaign",
+			"democrat",
+			"republican",
+			"sanction",
+			"tariff",
+			"war",
+			"military",
+			"invasion",
+			"protest",
+			"impeach",
+			"bill passes",
+			"legislation",
+			"prime minister",
+			"administration",
+			"regime",
+			"coup",
 		];
 		const lower = text.toLowerCase();
-		return politicalTerms.some(term => lower.includes(term));
+		return politicalTerms.some((term) => lower.includes(term));
 	}
 
 	/**
@@ -602,12 +605,12 @@ export class SliceOfBreadOrchestrator {
 	 */
 	async onDayRefresh() {
 		if (!this.presenceManager) return;
-		
+
 		const schedule = await this.generatePresenceSchedule();
 		await this.presenceManager.setBase(schedule);
-		
+
 		await this.logger.info("orchestrator-day-refresh", {
-			markers: schedule.map(m => m.name),
+			markers: schedule.map((m) => m.name),
 		});
 	}
 
@@ -689,7 +692,7 @@ export class SliceOfBreadOrchestrator {
 		const triggersDir = path.join(this.paths.workspaceDir, "scene-triggers");
 		if (!existsSync(triggersDir)) return;
 
-		const files = readdirSync(triggersDir).filter(f => f.endsWith(".json"));
+		const files = readdirSync(triggersDir).filter((f) => f.endsWith(".json"));
 		for (const file of files) {
 			const triggerPath = path.join(triggersDir, file);
 			try {
@@ -698,7 +701,9 @@ export class SliceOfBreadOrchestrator {
 				await this.triggerScene(trigger.scene, "manual");
 			} catch (err) {
 				await this.logger.error("scene-trigger-parse-failed", { file, error: String(err) });
-				try { unlinkSync(triggerPath); } catch {}
+				try {
+					unlinkSync(triggerPath);
+				} catch {}
 			}
 		}
 	}
@@ -711,8 +716,8 @@ export class SliceOfBreadOrchestrator {
 	 */
 	async triggerScene(sceneName, triggerType = "manual", customPrompt = null, options = {}) {
 		const { participants = [], turns = 2, startedBy = null } = options;
-		const scene = this.config.scenes.find(s => s.name === sceneName);
-		
+		const scene = this.config.scenes.find((s) => s.name === sceneName);
+
 		// For ad-hoc triggers with custom prompt, scene config is optional
 		if (!scene && !customPrompt) {
 			await this.logger.error("scene-not-found", { sceneName });
@@ -770,7 +775,7 @@ export class SliceOfBreadOrchestrator {
 			// Get channel
 			const targetChannelId = this.config.channelId;
 			if (!targetChannelId) {
-				throw new Error('No sliceOfBread channel configured');
+				throw new Error("No sliceOfBread channel configured");
 			}
 			const channel = await this.discordClient.channels.fetch(targetChannelId);
 			if (!channel || !channel.isTextBased()) {
@@ -788,7 +793,7 @@ export class SliceOfBreadOrchestrator {
 			if (this.getSession) {
 				const session = await this.getSession();
 				const result = await session.send(fullPrompt);
-				content = typeof result === "string" ? result : result.text ?? String(result);
+				content = typeof result === "string" ? result : (result.text ?? String(result));
 			} else {
 				// Fallback: use prompt directly as content (template mode)
 				content = customPrompt ?? scene.prompt;
@@ -839,7 +844,7 @@ export class SliceOfBreadOrchestrator {
 				sceneName,
 				contentLength: content.length,
 			});
-			
+
 			// Clear dynamic presence, return to schedule
 			await this.presenceManager?.clear();
 		} catch (error) {
@@ -904,12 +909,17 @@ export class SliceOfBreadOrchestrator {
 		// Inject world news if enabled
 		if (this.worldNewsConfig.enabled && this.newsCache.headlines.length > 0) {
 			const newsAge = Date.now() - this.newsCache.fetchedAt;
-			const newsAgeStr = newsAge < 3600000 ? `${Math.round(newsAge / 60000)}m ago` :
-				newsAge < 86400000 ? `${Math.round(newsAge / 3600000)}h ago` :
-				`${Math.round(newsAge / 86400000)}d ago`;
+			const newsAgeStr =
+				newsAge < 3600000
+					? `${Math.round(newsAge / 60000)}m ago`
+					: newsAge < 86400000
+						? `${Math.round(newsAge / 3600000)}h ago`
+						: `${Math.round(newsAge / 86400000)}d ago`;
 			lines.push("");
 			lines.push(`## Recent World News (fetched ${newsAgeStr})`);
-			lines.push("You MAY optionally reference one of these real-world events through your character's perspective. Keep it non-political. Do not force it if nothing fits naturally.");
+			lines.push(
+				"You MAY optionally reference one of these real-world events through your character's perspective. Keep it non-political. Do not force it if nothing fits naturally.",
+			);
 			for (const h of this.newsCache.headlines) {
 				lines.push(`- ${h}`);
 			}
@@ -929,7 +939,7 @@ export class SliceOfBreadOrchestrator {
 			lastScene: this.state.lastScene,
 			lastSceneTime: this.state.lastSceneTime,
 			memory: this.memory.getStats(),
-			scenes: this.config.scenes.map(s => ({
+			scenes: this.config.scenes.map((s) => ({
 				name: s.name,
 				trigger: Object.keys(s.trigger)[0],
 				speaker: s.speaker,

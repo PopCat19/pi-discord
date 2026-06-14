@@ -2,25 +2,12 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import {
-	ChannelType,
-	Client,
-	Events,
-	GatewayIntentBits,
-	Partials,
-} from "discord.js";
-import {
-	AuthStorage,
-	createAgentSession,
-	DefaultResourceLoader,
-	ModelRegistry,
-	SessionManager,
-	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+import { AuthStorage, createAgentSession, DefaultResourceLoader, ModelRegistry, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { ChannelType, Client, Events, GatewayIntentBits, Partials } from "discord.js";
+import { ChannelMemory } from "../lib/channel-memory.js";
 import { ensureDir, pathExists, removeIfExists, writeJson } from "../lib/fs.js";
 import { getRoutePaths } from "../lib/paths.js";
 import { authorizeInteraction } from "./authz.js";
-import { ChannelMemory } from "../lib/channel-memory.js";
 import { JournalStore } from "./journal.js";
 import { Logger } from "./logger.js";
 import { SliceOfBreadOrchestrator } from "./orchestrator.js";
@@ -104,9 +91,7 @@ export class PiDiscordDaemon {
 			});
 		}, 15_000);
 		this.triggerInterval = setInterval(() => {
-			this.processTriggers().catch((err) =>
-				this.logger.error("trigger-poll-failed", { error: String(err) }),
-			);
+			this.processTriggers().catch((err) => this.logger.error("trigger-poll-failed", { error: String(err) }));
 		}, 30_000);
 	}
 
@@ -119,11 +104,7 @@ export class PiDiscordDaemon {
 			try {
 				const trigger = JSON.parse(readFileSync(triggerPath, "utf8"));
 				unlinkSync(triggerPath);
-				const scope = this.resolveScope(
-					trigger.guildId ?? null,
-					trigger.channelId,
-					null,
-				);
+				const scope = this.resolveScope(trigger.guildId ?? null, trigger.channelId, null);
 				const route = await this.ensureRoute(scope);
 				await route.queue.enqueue({
 					source: {
@@ -165,7 +146,7 @@ export class PiDiscordDaemon {
 				await this.reconcileKnownRoutes();
 				await this.processMissedMentions();
 				await this.scheduleWork();
-				
+
 				// Initialize presence manager if configured
 				if (this.config.presence?.enabled) {
 					await this.initPresenceManager();
@@ -175,11 +156,11 @@ export class PiDiscordDaemon {
 				if (this.config.sliceOfBread?.enabled) {
 					await this.initOrchestrator();
 				}
-				
+
 				// Run route cleanup if enabled
 				if (this.config.routeCleanup?.enabled && this.config.routeCleanup.onStartup) {
 					await this.cleanupStaleRoutes();
-			}
+				}
 			} catch (err) {
 				await this.logger.error("client-ready-error", { error: String(err) });
 			}
@@ -195,113 +176,76 @@ export class PiDiscordDaemon {
 			}
 		});
 
-		this.client.on(
-			Events.MessageUpdate,
-			async (_previousMessage, nextMessage) => {
-				let message = nextMessage;
-				try {
-					if (!message?.id || !message.channelId) return;
-					if (message.partial) {
-						try {
-							message = await message.fetch();
-						} catch {
-							return;
-						}
-					}
-					if (message.author?.bot) return;
-					if (
-						message.guildId &&
-						this.config.allowedGuildIds.length > 0 &&
-						!this.config.allowedGuildIds.includes(message.guildId)
-					) {
+		this.client.on(Events.MessageUpdate, async (_previousMessage, nextMessage) => {
+			let message = nextMessage;
+			try {
+				if (!message?.id || !message.channelId) return;
+				if (message.partial) {
+					try {
+						message = await message.fetch();
+					} catch {
 						return;
 					}
-					if (
-						!authorizeInteraction(message, this.config, message.channel).allowed
-					)
-						return;
-
-					const scope = this.resolveScopeFromChannel(
-						message.guildId ?? null,
-						message.channelId,
-						message.channel,
-					);
-					const route = await this.getExistingRoute(scope);
-					if (!route) return;
-					if (
-						!route.journal.hasSource(message.id) &&
-						!route.queue.hasSource(message.id)
-					) {
-						return;
-					}
-
-					await route.journal.append({
-						kind: "edit",
-						sourceId: message.id,
-						timestamp: Date.now(),
-						routeKey: route.manifest.routeKey,
-						text: message.content ?? "",
-						authorId: message.author?.id,
-						authorName:
-							message.member?.displayName ?? message.author?.displayName,
-					});
-					const replyContext = message.reference?.messageId
-						? await this.fetchReplyContext(message)
-						: undefined;
-					await route.queue.replaceQueuedBySource(message.id, (item) => {
-						const rawText =
-							item.source.trigger === "mention" && this.client.user
-								? stripBotMention(
-										message.content ?? item.payload.rawText,
-										this.client.user.id,
-									)
-								: (message.content ?? item.payload.rawText);
-						item.payload.rawText = rawText;
-						item.payload.promptText = buildPromptText({
-							routeKey: route.manifest.routeKey,
-							scope: route.manifest.scope,
-							requester: {
-								id: item.source.userId,
-								name:
-									message.member?.displayName ??
-									message.author?.displayName ??
-									item.source.userId,
-							},
-							trigger: item.source.trigger,
-							rawText,
-							replyContext,
-							savedAttachments: item.payload.attachments ?? [],
-						});
-					});
-				} catch (error) {
-					await this.logger.error("message-update-failed", {
-						error: String(error),
-					});
 				}
-			},
-		);
+				if (message.author?.bot) return;
+				if (message.guildId && this.config.allowedGuildIds.length > 0 && !this.config.allowedGuildIds.includes(message.guildId)) {
+					return;
+				}
+				if (!authorizeInteraction(message, this.config, message.channel).allowed) return;
+
+				const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
+				const route = await this.getExistingRoute(scope);
+				if (!route) return;
+				if (!route.journal.hasSource(message.id) && !route.queue.hasSource(message.id)) {
+					return;
+				}
+
+				await route.journal.append({
+					kind: "edit",
+					sourceId: message.id,
+					timestamp: Date.now(),
+					routeKey: route.manifest.routeKey,
+					text: message.content ?? "",
+					authorId: message.author?.id,
+					authorName: message.member?.displayName ?? message.author?.displayName,
+				});
+				const replyContext = message.reference?.messageId ? await this.fetchReplyContext(message) : undefined;
+				await route.queue.replaceQueuedBySource(message.id, (item) => {
+					const rawText =
+						item.source.trigger === "mention" && this.client.user
+							? stripBotMention(message.content ?? item.payload.rawText, this.client.user.id)
+							: (message.content ?? item.payload.rawText);
+					item.payload.rawText = rawText;
+					item.payload.promptText = buildPromptText({
+						routeKey: route.manifest.routeKey,
+						scope: route.manifest.scope,
+						requester: {
+							id: item.source.userId,
+							name: message.member?.displayName ?? message.author?.displayName ?? item.source.userId,
+						},
+						trigger: item.source.trigger,
+						rawText,
+						replyContext,
+						savedAttachments: item.payload.attachments ?? [],
+					});
+				});
+			} catch (error) {
+				await this.logger.error("message-update-failed", {
+					error: String(error),
+				});
+			}
+		});
 
 		this.client.on(Events.MessageDelete, async (message) => {
 			try {
 				if (!message.id || !message.channelId) return;
-				if (
-					message.guildId &&
-					this.config.allowedGuildIds.length > 0 &&
-					!this.config.allowedGuildIds.includes(message.guildId)
-				) {
+				if (message.guildId && this.config.allowedGuildIds.length > 0 && !this.config.allowedGuildIds.includes(message.guildId)) {
 					return;
 				}
-				const scope = this.resolveScopeFromChannel(
-					message.guildId ?? null,
-					message.channelId,
-					message.channel,
-				);
+				const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
 				const route = await this.getExistingRoute(scope);
 				if (!route) return;
-				if (
-					!route.journal.hasSource(message.id) &&
-					!route.queue.hasSource(message.id)
-				) {
+				if (!route.journal.hasSource(message.id) && !route.queue.hasSource(message.id)) {
 					return;
 				}
 				await route.journal.append({
@@ -310,10 +254,7 @@ export class PiDiscordDaemon {
 					timestamp: Date.now(),
 					routeKey: route.manifest.routeKey,
 				});
-				await route.queue.cancelQueuedBySource(
-					message.id,
-					"Source message was deleted before execution.",
-				);
+				await route.queue.cancelQueuedBySource(message.id, "Source message was deleted before execution.");
 			} catch (error) {
 				await this.logger.error("message-delete-failed", {
 					error: String(error),
@@ -323,8 +264,7 @@ export class PiDiscordDaemon {
 
 		this.client.on(Events.InteractionCreate, async (interaction) => {
 			try {
-				if (!interaction.isChatInputCommand() && !interaction.isButton())
-					return;
+				if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 				await this.handleInteraction(interaction);
 			} catch (error) {
 				await this.logger.error("interaction-failed", {
@@ -333,12 +273,8 @@ export class PiDiscordDaemon {
 				});
 				if (interaction.isRepliable()) {
 					const responder =
-						interaction.deferred || interaction.replied
-							? interaction.followUp.bind(interaction)
-							: interaction.reply.bind(interaction);
-					await responder({ content: String(error), ephemeral: true }).catch(
-						() => undefined,
-					);
+						interaction.deferred || interaction.replied ? interaction.followUp.bind(interaction) : interaction.reply.bind(interaction);
+					await responder({ content: String(error), ephemeral: true }).catch(() => undefined);
 				}
 			}
 		});
@@ -350,11 +286,7 @@ export class PiDiscordDaemon {
 				if (user.partial) await user.fetch();
 				const message = reaction.message;
 				if (!message.guildId) return;
-				const scope = this.resolveScopeFromChannel(
-					message.guildId,
-					message.channelId,
-					message.channel,
-				);
+				const scope = this.resolveScopeFromChannel(message.guildId, message.channelId, message.channel);
 				const route = await this.getExistingRoute(scope);
 				if (!route) return;
 				const member = message.guild?.members?.cache?.get(user.id);
@@ -387,11 +319,7 @@ export class PiDiscordDaemon {
 
 	resolveScopeFromChannel(guildId, channelId, channel) {
 		const isThread = channel?.isThread?.() ?? false;
-		return this.resolveScope(
-			guildId,
-			isThread ? (channel.parentId ?? channelId) : channelId,
-			isThread ? channel.id : null,
-		);
+		return this.resolveScope(guildId, isThread ? (channel.parentId ?? channelId) : channelId, isThread ? channel.id : null);
 	}
 
 	async getExistingRoute(scope) {
@@ -429,16 +357,9 @@ export class PiDiscordDaemon {
 		if (!manifest) {
 			const override = this.config.routeOverrides[scope.routeKey] ?? {};
 			const workspaceMode = override.mode ?? this.config.workspaceMode;
-			const executionRoot =
-				workspaceMode === "shared"
-					? (override.executionRoot ?? this.config.sharedExecutionRoot)
-					: routePaths.dedicatedExecutionRoot;
-			if (!executionRoot)
-				throw new Error(`No execution root configured for ${scope.routeKey}`);
-			const memoryPath =
-				workspaceMode === "dedicated"
-					? path.join(executionRoot, "discord-memory.md")
-					: routePaths.sharedMemoryPath;
+			const executionRoot = workspaceMode === "shared" ? (override.executionRoot ?? this.config.sharedExecutionRoot) : routePaths.dedicatedExecutionRoot;
+			if (!executionRoot) throw new Error(`No execution root configured for ${scope.routeKey}`);
+			const memoryPath = workspaceMode === "dedicated" ? path.join(executionRoot, "discord-memory.md") : routePaths.sharedMemoryPath;
 			manifest = createRouteManifest({
 				routeKey: scope.routeKey,
 				scope: {
@@ -468,19 +389,16 @@ export class PiDiscordDaemon {
 		await ensureDir(routePaths.sessionsDir);
 		await ensureDir(routePaths.inboundAttachmentsDir);
 
-		const queue = new RouteQueueStore(
-			routePaths.queuePath,
-			this.config.queueLeaseMs,
-		);
+		const queue = new RouteQueueStore(routePaths.queuePath, this.config.queueLeaseMs);
 		await queue.load();
 		await queue.recoverExpiredLeases();
 		const journal = new JournalStore(routePaths.journalPath);
 		await journal.load();
 		const memory = this.config.enableChannelMemory
 			? new ChannelMemory({
-				path: routePaths.sharedMemoryPath.replace(".md", ".json"),
-				maxTokens: 8192,
-			})
+					path: routePaths.sharedMemoryPath.replace(".md", ".json"),
+					maxTokens: 8192,
+				})
 			: undefined;
 		const renderer = new DiscordRenderer({
 			client: this.client,
@@ -505,8 +423,7 @@ export class PiDiscordDaemon {
 				const sourceId = host.currentSourceId;
 				if (!sourceId) throw new Error("No source message to react to");
 				const channel = await renderer.getTargetChannel();
-				if (!("messages" in channel))
-					throw new Error("Channel does not support messages");
+				if (!("messages" in channel)) throw new Error("Channel does not support messages");
 				const msg = await channel.messages.fetch(sourceId);
 				await msg.react(emoji);
 			},
@@ -548,28 +465,21 @@ export class PiDiscordDaemon {
 	isConversationFollowup(route, message) {
 		// Reply to a bot message (cache-only check, no API call)
 		if (message.reference?.messageId) {
-			const ref = message.channel.messages?.cache?.get(
-				message.reference.messageId,
-			);
+			const ref = message.channel.messages?.cache?.get(message.reference.messageId);
 			if (ref?.author?.id === this.client.user?.id) return true;
 		}
 
 		// Same user who last talked to the bot, and bot responded within 2 minutes
 		const entries = route.journal.entries;
-		const lastResponse = entries.findLast(
-			(e) => e.kind === "assistant-final" || e.kind === "trigger-sent",
-		);
-		if (!lastResponse || Date.now() - lastResponse.timestamp > 2 * 60 * 1000)
-			return false;
-		const lastInbound = entries.findLast(
-			(e) => e.kind === "inbound" || e.kind === "interaction",
-		);
+		const lastResponse = entries.findLast((e) => e.kind === "assistant-final" || e.kind === "trigger-sent");
+		if (!lastResponse || Date.now() - lastResponse.timestamp > 2 * 60 * 1000) return false;
+		const lastInbound = entries.findLast((e) => e.kind === "inbound" || e.kind === "interaction");
 		return lastInbound?.authorId === message.author.id;
 	}
 
 	async handleMessageCreate(message) {
 		if (!this.client.user) return;
-		
+
 		// Handle bot messages for followup (any channel)
 		if (message.author?.bot) {
 			// Skip self messages
@@ -583,11 +493,7 @@ export class PiDiscordDaemon {
 				await this.orchestrator.handleBotMessage(message);
 			}
 			// Journal other bot messages as ambient context for this bot
-			const scope = this.resolveScopeFromChannel(
-				message.guildId ?? null,
-				message.channelId,
-				message.channel,
-			);
+			const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
 			const route = await this.getExistingRoute(scope);
 			if (route) {
 				await route.journal.append({
@@ -602,11 +508,7 @@ export class PiDiscordDaemon {
 			}
 			return;
 		}
-		const authorization = authorizeInteraction(
-			message,
-			this.config,
-			message.channel,
-		);
+		const authorization = authorizeInteraction(message, this.config, message.channel);
 		if (!authorization.allowed) return;
 
 		const botMentioned =
@@ -617,17 +519,13 @@ export class PiDiscordDaemon {
 					return botMember?.roles?.cache?.has(role.id);
 				}));
 		const isDm = !message.guildId;
-		
+
 		// If another bot is mentioned and we're not mentioned, skip entirely
-		const otherBotMentioned = message.mentions.users?.some?.(user => user.bot && user.id !== this.client.user.id) ?? false;
+		const otherBotMentioned = message.mentions.users?.some?.((user) => user.bot && user.id !== this.client.user.id) ?? false;
 		if (otherBotMentioned && !botMentioned) return;
-		
+
 		if (!botMentioned && !isDm) {
-			const scope = this.resolveScopeFromChannel(
-				message.guildId ?? null,
-				message.channelId,
-				message.channel,
-			);
+			const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
 			const route = await this.getExistingRoute(scope);
 			if (!route) return;
 			if (!this.isConversationFollowup(route, message)) {
@@ -645,43 +543,27 @@ export class PiDiscordDaemon {
 			// Followup — fall through to normal processing
 		}
 
-		const scope = this.resolveScopeFromChannel(
-			message.guildId ?? null,
-			message.channelId,
-			message.channel,
-		);
+		const scope = this.resolveScopeFromChannel(message.guildId ?? null, message.channelId, message.channel);
 		const route = await this.ensureRoute(scope);
-		if (
-			route.journal.hasSource(message.id) ||
-			route.queue.hasSource(message.id)
-		)
-			return;
+		if (route.journal.hasSource(message.id) || route.queue.hasSource(message.id)) return;
 
-		const savedAttachments = await this.saveInboundAttachments(
-			route,
-			message.attachments.values(),
-			message.id,
-		);
-		const replyContext = message.reference?.messageId
-			? await this.fetchReplyContext(message)
-			: undefined;
-		const rawText = botMentioned
-			? stripBotMention(message.content ?? "", this.client.user.id)
-			: (message.content ?? "");
+		const savedAttachments = await this.saveInboundAttachments(route, message.attachments.values(), message.id);
+		const replyContext = message.reference?.messageId ? await this.fetchReplyContext(message) : undefined;
+		const rawText = botMentioned ? stripBotMention(message.content ?? "", this.client.user.id) : (message.content ?? "");
 		const trigger = isDm ? "dm" : botMentioned ? "mention" : "followup";
-		
+
 		// Pulse thinking status
 		if (typeof message.channel.sendTyping === "function") {
 			await message.channel.sendTyping().catch(() => undefined);
 		}
 
 		// Self-destructing status message for pings/followups (optional)
-		let statusMessageId = undefined;
+		let statusMessageId;
 		if (!isDm && this.config.showThinkingStatus) {
 			try {
-				const statusMsg = await message.reply({ 
-					content: "*Thinking...*", 
-					allowedMentions: { repliedUser: false } 
+				const statusMsg = await message.reply({
+					content: "*Thinking...*",
+					allowedMentions: { repliedUser: false },
 				});
 				statusMessageId = statusMsg.id;
 			} catch {}
@@ -742,11 +624,7 @@ export class PiDiscordDaemon {
 			if (namespace !== "pi-discord" || action !== "stop" || !routeKey) {
 				return;
 			}
-			const authorization = authorizeInteraction(
-				interaction,
-				this.config,
-				interaction.channel,
-			);
+			const authorization = authorizeInteraction(interaction, this.config, interaction.channel);
 			if (!authorization.allowed) {
 				await interaction.reply({
 					content: authorization.reason ?? "Not allowed.",
@@ -763,9 +641,7 @@ export class PiDiscordDaemon {
 			}
 			const stopped = await this.abortRoute(routeKey);
 			await interaction.reply({
-				content: stopped
-					? `Stop requested for ${routeKey}.`
-					: `No active run for ${routeKey}.`,
+				content: stopped ? `Stop requested for ${routeKey}.` : `No active run for ${routeKey}.`,
 				ephemeral: true,
 			});
 			return;
@@ -774,17 +650,10 @@ export class PiDiscordDaemon {
 		if (!interaction.isChatInputCommand()) return;
 		if (interaction.commandName !== this.config.commandName) return;
 
-		const authorization = authorizeInteraction(
-			interaction,
-			this.config,
-			interaction.channel,
-		);
+		const authorization = authorizeInteraction(interaction, this.config, interaction.channel);
 		if (!authorization.allowed) {
 			if (interaction.isRepliable()) {
-				const responder =
-					interaction.deferred || interaction.replied
-						? interaction.followUp.bind(interaction)
-						: interaction.reply.bind(interaction);
+				const responder = interaction.deferred || interaction.replied ? interaction.followUp.bind(interaction) : interaction.reply.bind(interaction);
 				await responder({
 					content: authorization.reason ?? "Not allowed.",
 					ephemeral: true,
@@ -795,11 +664,7 @@ export class PiDiscordDaemon {
 
 		const subcommand = interaction.options.getSubcommand();
 		if (subcommand === "status") {
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			const route = await this.getExistingRoute(scope);
 			if (!route) {
 				await interaction.reply({
@@ -808,14 +673,8 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			const queued = route.queue
-				.list()
-				.filter((item) => item.state === "queued").length;
-			const running = route.queue
-				.list()
-				.filter(
-					(item) => item.state === "running" || item.state === "leased",
-				).length;
+			const queued = route.queue.list().filter((item) => item.state === "queued").length;
+			const running = route.queue.list().filter((item) => item.state === "running" || item.state === "leased").length;
 			await interaction.reply({
 				content: `Route ${route.manifest.routeKey}\nQueued: ${queued}\nRunning: ${running}`,
 				ephemeral: true,
@@ -831,16 +690,10 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			const stopped = await this.abortRoute(scope.routeKey);
 			await interaction.reply({
-				content: stopped
-					? `Stop requested for ${scope.routeKey}.`
-					: `No active run for ${scope.routeKey}.`,
+				content: stopped ? `Stop requested for ${scope.routeKey}.` : `No active run for ${scope.routeKey}.`,
 				ephemeral: true,
 			});
 			return;
@@ -854,11 +707,7 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			await this.abortRoute(scope.routeKey);
 			const route = await this.getExistingRoute(scope);
 			if (!route) {
@@ -886,11 +735,7 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			await this.abortRoute(scope.routeKey);
 			const route = await this.getExistingRoute(scope);
 			if (route) {
@@ -916,11 +761,7 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			const route = await this.getExistingRoute(scope);
 			if (!route) {
 				await interaction.reply({
@@ -976,20 +817,16 @@ export class PiDiscordDaemon {
 			const doBackup = interaction.options.getBoolean("backup") ?? false;
 			const deleteMessages = interaction.options.getBoolean("delete-messages") ?? false;
 			const targetChannel = interaction.options.getChannel("channel");
-			
+
 			// Use target channel or current channel
 			const channelId = targetChannel?.id ?? interaction.channelId;
 			const guildId = targetChannel?.guildId ?? interaction.guildId;
 			const channel = targetChannel ?? interaction.channel;
-			
-			const scope = this.resolveScopeFromChannel(
-				guildId ?? null,
-				channelId,
-				channel,
-			);
+
+			const scope = this.resolveScopeFromChannel(guildId ?? null, channelId, channel);
 			await this.abortRoute(scope.routeKey);
 			const route = await this.getExistingRoute(scope);
-			
+
 			// Allow wipe on orchestrator channel even without route
 			const isOrchChannel = this.config.sliceOfBread?.channelId === channelId;
 			if (!route && !isOrchChannel) {
@@ -999,22 +836,22 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			
+
 			await interaction.reply({
 				content: "Wiping...",
-					ephemeral: true,
+				ephemeral: true,
 			});
-			
+
 			let message = "";
 			try {
 				if (route) {
 					await route.host.dispose();
-				route.manifest.sessionFile = undefined;
-				await this.registry.saveManifest(route.manifest);
-				
-				const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
-				
-				// Optional backup
+					route.manifest.sessionFile = undefined;
+					await this.registry.saveManifest(route.manifest);
+
+					const routePaths = getRoutePaths(this.paths, route.manifest.routeKey);
+
+					// Optional backup
 					if (doBackup) {
 						const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 						const memoryJsonPath = routePaths.sharedMemoryPath.replace(".md", ".json");
@@ -1025,19 +862,19 @@ export class PiDiscordDaemon {
 							message += `Backed up to ${path.basename(backupPath)}. `;
 						}
 					}
-				
-				// Clear journal and memory
-				await Promise.all([
-					removeIfExists(routePaths.journalPath),
-					removeIfExists(routePaths.sharedMemoryPath),
-					removeIfExists(routePaths.sharedMemoryPath.replace(".md", ".json")),
-				]);
-				route.journal.entries.length = 0;
+
+					// Clear journal and memory
+					await Promise.all([
+						removeIfExists(routePaths.journalPath),
+						removeIfExists(routePaths.sharedMemoryPath),
+						removeIfExists(routePaths.sharedMemoryPath.replace(".md", ".json")),
+					]);
+					route.journal.entries.length = 0;
 					if (route.memory) {
 						route.memory.clear();
 					}
-					}
-				
+				}
+
 				// Clear shared memory (orchestrator)
 				if (this.orchestrator?.sharedMemoryPath) {
 					try {
@@ -1045,25 +882,27 @@ export class PiDiscordDaemon {
 						message += "Shared memory cleared. ";
 					} catch (e) {}
 				}
-				
+
 				// Delete bot messages (only if delete-messages flag)
 				if (deleteMessages) {
 					try {
 						const messages = await channel.messages.fetch({ limit: 50 });
-						const botMsgs = messages.filter(m => m.author.id === this.client.user.id);
+						const botMsgs = messages.filter((m) => m.author.id === this.client.user.id);
 						for (const msg of botMsgs.values()) {
-							try { await msg.delete(); } catch (e) {}
+							try {
+								await msg.delete();
+							} catch (e) {}
 						}
 						message += `Cleared ${botMsgs.size} messages. `;
 					} catch (e) {}
 				}
-				
+
 				// Send separator
 				await channel.send({
 					content: "[fresh start]",
 					allowedMentions: { parse: [] },
 				});
-				
+
 				await interaction.editReply({
 					content: `Wiped. ${message}` || "Done.",
 					ephemeral: true,
@@ -1078,11 +917,7 @@ export class PiDiscordDaemon {
 		}
 
 		if (subcommand === "regen") {
-			const scope = this.resolveScopeFromChannel(
-				interaction.guildId ?? null,
-				interaction.channelId,
-				interaction.channel,
-			);
+			const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 			const route = await this.getExistingRoute(scope);
 			if (!route) {
 				await interaction.reply({
@@ -1091,24 +926,23 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			
+
 			// Find last bot message in channel
 			const channel = interaction.channel;
 			const messages = await channel.messages.fetch({ limit: 20 });
-			const lastBotMsg = messages.find(m => m.author.id === this.client.user.id);
-			
+			const lastBotMsg = messages.find((m) => m.author.id === this.client.user.id);
+
 			// Find the last user message that triggered or should have triggered a response
-			const lastUserMsg = messages.find(m => !m.author.bot && m.id !== interaction.id);
-			
-			// If no bot message, we can still "regenerate" (generate for the first time) 
+			const lastUserMsg = messages.find((m) => !m.author.bot && m.id !== interaction.id);
+
+			// If no bot message, we can still "regenerate" (generate for the first time)
 			// if there's a recent user message that mentions the bot or was in DM
 			const isDm = !interaction.guildId;
-			const mentionsBot = lastUserMsg && (
-				lastUserMsg.mentions.users.has(this.client.user.id) ||
-				(lastUserMsg.guildId && lastUserMsg.mentions.roles?.some(role => 
-					this.client.user.id in (lastUserMsg.guild?.members.me?.roles.cache ?? {})
-				))
-			);
+			const mentionsBot =
+				lastUserMsg &&
+				(lastUserMsg.mentions.users.has(this.client.user.id) ||
+					(lastUserMsg.guildId &&
+						lastUserMsg.mentions.roles?.some((role) => this.client.user.id in (lastUserMsg.guild?.members.me?.roles.cache ?? {}))));
 
 			if (!lastBotMsg && !(lastUserMsg && (isDm || mentionsBot))) {
 				await interaction.reply({
@@ -1117,11 +951,11 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			
+
 			// Check authorization: admin or original caller
 			const isOriginalCaller = lastUserMsg && lastUserMsg.author.id === interaction.user.id;
 			const canRegenerate = authorization.canControl || isOriginalCaller;
-			
+
 			if (!canRegenerate) {
 				await interaction.reply({
 					content: "Only the original caller or admin may regenerate.",
@@ -1129,7 +963,7 @@ export class PiDiscordDaemon {
 				});
 				return;
 			}
-			
+
 			// Get the prompt from the last user message
 			let rawText = lastUserMsg?.content ?? "Continue.";
 			if (mentionsBot) {
@@ -1137,7 +971,7 @@ export class PiDiscordDaemon {
 				rawText = rawText.replace(/<@!?(\d+)>/g, "").trim();
 			}
 			const promptText = rawText || "Continue.";
-			
+
 			// Queue regeneration
 			const queuedItem = await route.queue.enqueue({
 				source: {
@@ -1152,32 +986,32 @@ export class PiDiscordDaemon {
 					targetMessageId: lastBotMsg?.id,
 				},
 			});
-			
+
 			await interaction.reply({
 				content: lastBotMsg ? "Regenerating response..." : "Generating response for recent mention...",
 				ephemeral: true,
 			});
-			
+
 			// Trigger immediate processing
 			this.runInBackground("regenerate-queue", async () => {
 				await this.scheduleWork();
 			});
-			
+
 			// Wait for completion with 30s timeout
 			const startTime = Date.now();
 			const timeout = 30000;
 			let completed = false;
-			
+
 			this.runInBackground("regen-feedback", async () => {
 				while (Date.now() - startTime < timeout) {
-					const item = route.queue.list().find(i => i.id === queuedItem.id);
+					const item = route.queue.list().find((i) => i.id === queuedItem.id);
 					if (!item || item.state !== "queued") {
 						completed = true;
 						break;
 					}
-					await new Promise(r => setTimeout(r, 500));
+					await new Promise((r) => setTimeout(r, 500));
 				}
-				
+
 				try {
 					if (completed) {
 						await interaction.editReply({ content: "Regenerated." });
@@ -1226,13 +1060,12 @@ export class PiDiscordDaemon {
 					await journal.load();
 					const entries = journal.list();
 					if (entries.length > 0) {
-						lastActivity = Math.max(...entries.map(e => e.timestamp || 0));
+						lastActivity = Math.max(...entries.map((e) => e.timestamp || 0));
 					}
 				} catch {}
 
 				const daysSinceActive = (now - lastActivity) / (1000 * 60 * 60 * 24);
-				const isStale = wipeOption === "all" ||
-					(wipeOption && daysSinceActive >= parseInt(wipeOption));
+				const isStale = wipeOption === "all" || (wipeOption && daysSinceActive >= parseInt(wipeOption));
 
 				if (isStale) {
 					staleRoutes.push({ routeKey, lastActivity, daysSinceActive });
@@ -1284,19 +1117,19 @@ export class PiDiscordDaemon {
 			const context = interaction.options.getString("context") ?? "";
 			const participantsStr = interaction.options.getString("participants") ?? "";
 			const turns = interaction.options.getInteger("turns") ?? 2;
-			
+
 			// Parse participants
 			const participants = participantsStr
 				.split(",")
-				.map(p => p.trim().toLowerCase())
-				.filter(p => p.length > 0);
-			
+				.map((p) => p.trim().toLowerCase())
+				.filter((p) => p.length > 0);
+
 			// Create ephemeral reply first
 			await interaction.reply({
 				content: "Triggering scene...",
 				ephemeral: true,
 			});
-			
+
 			// Trigger scene via orchestrator
 			if (this.orchestrator && this.config.sliceOfBread?.enabled) {
 				const scenePrompt = context ? `${prompt}\n\nContext: ${context}` : prompt;
@@ -1316,14 +1149,18 @@ export class PiDiscordDaemon {
 					mkdirSync(triggersDir, { recursive: true });
 				}
 				const triggerFile = path.join(triggersDir, `manual-${Date.now()}.json`);
-				writeFileSync(triggerFile, JSON.stringify({
-					scene: "manual",
-					prompt: context ? `${prompt}\n\nContext: ${context}` : prompt,
-					participants,
-					turns,
-					triggeredAt: Date.now(),
-					startedBy: interaction.user.id,
-				}), "utf8");
+				writeFileSync(
+					triggerFile,
+					JSON.stringify({
+						scene: "manual",
+						prompt: context ? `${prompt}\n\nContext: ${context}` : prompt,
+						participants,
+						turns,
+						triggeredAt: Date.now(),
+						startedBy: interaction.user.id,
+					}),
+					"utf8",
+				);
 				await interaction.editReply({
 					content: `Scene queued (${turns} turns${participants.length > 0 ? `, participants: ${participants.join(", ")}` : ""}): ${prompt.slice(0, 80)}${prompt.length > 80 ? "..." : ""}`,
 					ephemeral: true,
@@ -1335,16 +1172,9 @@ export class PiDiscordDaemon {
 		if (subcommand !== "ask" && subcommand !== "routes") return;
 
 		const rawText = interaction.options.getString("text", true).trim();
-		const scope = this.resolveScopeFromChannel(
-			interaction.guildId ?? null,
-			interaction.channelId,
-			interaction.channel,
-		);
+		const scope = this.resolveScopeFromChannel(interaction.guildId ?? null, interaction.channelId, interaction.channel);
 		const route = await this.ensureRoute(scope);
-		if (
-			route.journal.hasSource(interaction.id) ||
-			route.queue.hasSource(interaction.id)
-		) {
+		if (route.journal.hasSource(interaction.id) || route.queue.hasSource(interaction.id)) {
 			await interaction.reply({
 				content: "That interaction was already queued.",
 				ephemeral: true,
@@ -1408,22 +1238,22 @@ export class PiDiscordDaemon {
 			},
 		});
 		await this.scheduleWork();
-		
+
 		// Wait for completion with 30s timeout
 		const startTime = Date.now();
 		const timeout = 30000;
 		let completed = false;
-		
+
 		this.runInBackground("ask-feedback", async () => {
 			while (Date.now() - startTime < timeout) {
-				const item = route.queue.list().find(i => i.id === queuedItem.id);
+				const item = route.queue.list().find((i) => i.id === queuedItem.id);
 				if (!item || item.state !== "queued") {
 					completed = true;
 					break;
 				}
-				await new Promise(r => setTimeout(r, 500));
+				await new Promise((r) => setTimeout(r, 500));
 			}
-			
+
 			try {
 				if (completed) {
 					await interaction.editReply({ content: "Done." });
@@ -1438,15 +1268,10 @@ export class PiDiscordDaemon {
 		const saved = [];
 		for (const attachment of attachments) {
 			const extension = path.extname(attachment.name ?? "") || ".bin";
-			const filePath = path.join(
-				route.routePaths.inboundAttachmentsDir,
-				`${sourceId}-${attachment.id}${extension}`,
-			);
+			const filePath = path.join(route.routePaths.inboundAttachmentsDir, `${sourceId}-${attachment.id}${extension}`);
 			const response = await fetch(attachment.url);
 			if (!response.ok) {
-				throw new Error(
-					`Failed to download attachment ${attachment.url}: ${response.status}`,
-				);
+				throw new Error(`Failed to download attachment ${attachment.url}: ${response.status}`);
 			}
 			const buffer = Buffer.from(await response.arrayBuffer());
 			await writeFile(filePath, buffer);
@@ -1530,10 +1355,10 @@ export class PiDiscordDaemon {
 			if (this.presenceManager) {
 				await this.presenceManager.setActivity("processing", { ttl: 300000 });
 			}
-			
+
 			await route.queue.markRunning(leasedItem.id);
 			await route.renderer.renderRunning(leasedItem);
-			
+
 			// Pulse typing indicator during processing (Discord expires after ~10s)
 			if (!this.config.showThinkingStatus && leasedItem.source.kind !== "interaction") {
 				const channel = await route.renderer.getTargetChannel().catch(() => undefined);
@@ -1544,7 +1369,7 @@ export class PiDiscordDaemon {
 					}, 8000);
 				}
 			}
-			
+
 			route.host.currentSourceId = leasedItem.source.sourceId;
 			const session = await route.host.ensureSession();
 			await this.registry.saveManifest(route.manifest);
@@ -1563,26 +1388,17 @@ export class PiDiscordDaemon {
 			);
 
 			unsubscribe = session.subscribe((event) => {
-				if (
-					event.type === "message_update" &&
-					event.assistantMessageEvent?.type === "text_delta"
-				) {
+				if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
 					assistantText += event.assistantMessageEvent.delta;
 				}
 			});
 
-			const modelSupportsImages =
-				this.config.enableImageInput &&
-				(session.model?.input?.includes?.("image") ?? false);
+			const modelSupportsImages = this.config.enableImageInput && (session.model?.input?.includes?.("image") ?? false);
 			const images = modelSupportsImages
 				? await Promise.all(
 						leasedItem.payload.attachments
-							.filter(
-								(attachment) => attachment.isImage && attachment.contentType,
-							)
-							.map((attachment) =>
-								toImageContent(attachment.path, attachment.contentType),
-							),
+							.filter((attachment) => attachment.isImage && attachment.contentType)
+							.map((attachment) => toImageContent(attachment.path, attachment.contentType)),
 					)
 				: [];
 
@@ -1617,14 +1433,12 @@ export class PiDiscordDaemon {
 			await this.registry.saveManifest(route.manifest);
 			await route.queue.finish(leasedItem.id, "completed");
 
-			const shouldPost =
-				assistantText.trim() &&
-				!(isTrigger && assistantText.includes("[NO_OUTREACH]"));
+			const shouldPost = assistantText.trim() && !(isTrigger && assistantText.includes("[NO_OUTREACH]"));
 			const isRegenerate = leasedItem.source.kind === "regenerate";
-			
+
 			if (shouldPost || isRegenerate) {
 				const channel = await route.renderer.getTargetChannel();
-			
+
 				if (isRegenerate && leasedItem.payload.targetMessageId) {
 					// Edit existing message for regenerate
 					try {
@@ -1660,9 +1474,7 @@ export class PiDiscordDaemon {
 
 			let journalKind = "assistant-final";
 			if (isTrigger) {
-				journalKind = assistantText.includes("[NO_OUTREACH]")
-					? "trigger-suppressed"
-					: "trigger-sent";
+				journalKind = assistantText.includes("[NO_OUTREACH]") ? "trigger-suppressed" : "trigger-sent";
 			}
 			await route.journal.append({
 				kind: journalKind,
@@ -1671,7 +1483,7 @@ export class PiDiscordDaemon {
 				sourceId: leasedItem.id,
 				text: assistantText,
 			});
-			
+
 			// Also append to compressed memory
 			if (route.memory && assistantText.trim()) {
 				route.memory.append({
@@ -1684,25 +1496,17 @@ export class PiDiscordDaemon {
 			await route.queue.finish(leasedItem.id, nextState, text);
 			await this.registry.saveManifest(route.manifest);
 			await route.journal.append({
-				kind:
-					nextState === "cancelled" ? "assistant-cancelled" : "assistant-error",
+				kind: nextState === "cancelled" ? "assistant-cancelled" : "assistant-error",
 				routeKey: route.manifest.routeKey,
 				timestamp: Date.now(),
 				sourceId: leasedItem.id,
 				error: text,
 			});
 			if (!isTrigger) {
-				const errorMsg =
-					nextState === "cancelled"
-						? "Run stopped."
-						: `Something went wrong. (${text.slice(0, 200)})`;
-				const channel = await route.renderer
-					.getTargetChannel()
-					.catch(() => undefined);
+				const errorMsg = nextState === "cancelled" ? "Run stopped." : `Something went wrong. (${text.slice(0, 200)})`;
+				const channel = await route.renderer.getTargetChannel().catch(() => undefined);
 				if (channel) {
-					await channel
-						.send({ content: errorMsg, allowedMentions: { parse: [] } })
-						.catch(() => undefined);
+					await channel.send({ content: errorMsg, allowedMentions: { parse: [] } }).catch(() => undefined);
 				}
 			}
 		} finally {
@@ -1710,7 +1514,7 @@ export class PiDiscordDaemon {
 			if (heartbeat) clearInterval(heartbeat);
 			if (typingHeartbeat) clearInterval(typingHeartbeat);
 			unsubscribe();
-			
+
 			// Clear dynamic presence, return to schedule
 			await this.presenceManager?.clear();
 		}
@@ -1745,7 +1549,7 @@ export class PiDiscordDaemon {
 					await journal.load();
 					const entries = journal.list();
 					if (entries.length > 0) {
-						lastActivity = Math.max(...entries.map(e => e.timestamp || 0));
+						lastActivity = Math.max(...entries.map((e) => e.timestamp || 0));
 					}
 				} catch {}
 
@@ -1769,15 +1573,12 @@ export class PiDiscordDaemon {
 					...summary.scope,
 					routeKey: summary.routeKey,
 				});
-				const channel = await this.client.channels.fetch(
-					route.manifest.scope.threadId ?? route.manifest.scope.channelId,
-				);
+				const channel = await this.client.channels.fetch(route.manifest.scope.threadId ?? route.manifest.scope.channelId);
 				if (!channel || !("messages" in channel)) continue;
 				const recent = await channel.messages.fetch({ limit: 15 });
 				for (const message of [...recent.values()].reverse()) {
 					if (message.author?.bot) continue;
-					if (!authorizeInteraction(message, this.config, channel).allowed)
-						continue;
+					if (!authorizeInteraction(message, this.config, channel).allowed) continue;
 					if (route.journal.hasSource(message.id)) continue;
 					await route.journal.append({
 						kind: "ambient",
@@ -1786,8 +1587,7 @@ export class PiDiscordDaemon {
 						timestamp: message.createdTimestamp,
 						text: message.content ?? "",
 						authorId: message.author?.id,
-						authorName:
-							message.member?.displayName ?? message.author?.displayName,
+						authorName: message.member?.displayName ?? message.author?.displayName,
 					});
 				}
 			} catch (error) {
@@ -1806,22 +1606,19 @@ export class PiDiscordDaemon {
 				const route = await this.getExistingRoute({ routeKey: summary.routeKey });
 				if (!route) continue;
 
-				const channel = await this.client.channels.fetch(
-					route.manifest.scope.threadId ?? route.manifest.scope.channelId,
-				);
+				const channel = await this.client.channels.fetch(route.manifest.scope.threadId ?? route.manifest.scope.channelId);
 				if (!channel || !("messages" in channel)) continue;
 
 				// Fetch recent messages
 				const recent = await channel.messages.fetch({ limit: 20 });
-				
+
 				// Find the most recent message that mentions the bot
 				let lastMention = null;
 				for (const message of recent.values()) {
 					if (message.author?.bot) continue;
-					const isMention = message.mentions.users.has(this.client.user.id) ||
-						(message.guildId && message.mentions.roles?.some(role =>
-							this.client.user.id in (message.guild?.members.me?.roles.cache ?? {})
-						));
+					const isMention =
+						message.mentions.users.has(this.client.user.id) ||
+						(message.guildId && message.mentions.roles?.some((role) => this.client.user.id in (message.guild?.members.me?.roles.cache ?? {})));
 					if (!isMention) continue;
 					if (route.journal.hasSource(message.id)) continue;
 					lastMention = message;
@@ -1868,11 +1665,11 @@ export class PiDiscordDaemon {
 	}
 
 	async initOrchestrator() {
-		const instanceName = this.config.sliceOfBread?.primaryInstance ?? this.client.user?.tag?.split('#')[0] ?? "unknown";
-		
+		const instanceName = this.config.sliceOfBread?.primaryInstance ?? this.client.user?.tag?.split("#")[0] ?? "unknown";
+
 		// Session will be created lazily
 		this.orchestratorSession = null;
-		
+
 		// Create session getter for orchestrator
 		const getSession = async () => {
 			if (!this.orchestratorSession) {
@@ -1904,7 +1701,7 @@ export class PiDiscordDaemon {
 			presenceManager: this.presenceManager,
 			presenceConfig: this.config.presence,
 		});
-		
+
 		// Wire orchestrator's day refresh to presence manager
 		if (this.presenceManager) {
 			this.presenceManager.onDayRefresh = () => this.orchestrator.onDayRefresh();
@@ -1913,7 +1710,7 @@ export class PiDiscordDaemon {
 		await this.orchestrator.start();
 		await this.logger.info("orchestrator-initialized", {
 			instanceName,
-			scenes: this.config.sliceOfBread?.scenes?.map(s => s.name) ?? [],
+			scenes: this.config.sliceOfBread?.scenes?.map((s) => s.name) ?? [],
 		});
 	}
 
@@ -1925,7 +1722,7 @@ export class PiDiscordDaemon {
 
 		// Get system prompt from config
 		let systemPrompt = this.config.systemPrompt ?? "";
-		
+
 		// Inject lore context if available
 		const loreContext = this.loadLoreContext();
 		if (loreContext) {
@@ -2065,9 +1862,9 @@ export class PiDiscordDaemon {
 		if (Date.now() - (this.lastBotFollowup ?? 0) < cooldown) return;
 
 		// Determine if this bot should respond
-		const instanceTag = this.client.user?.tag?.split('#')[0]?.toLowerCase() ?? 'unknown';
+		const instanceTag = this.client.user?.tag?.split("#")[0]?.toLowerCase() ?? "unknown";
 		const responders = config.responders ?? [];
-		
+
 		// Check for active scene turn first
 		let sceneTurn = null;
 		if (this.orchestrator) {
@@ -2076,14 +1873,14 @@ export class PiDiscordDaemon {
 				sceneTurn = turnCheck.turnState;
 			}
 		}
-		
+
 		// If scene turn, bypass normal followup checks
 		if (sceneTurn) {
 			try {
 				const session = await this.createOrchestratorSession();
 				const sharedContext = this.orchestrator.getSharedMemoryContext(10);
 				const prompt = `Continue the conversation. Recent messages:\n${sharedContext}\n\nRespond as your character. Keep it brief.`;
-				
+
 				let response = "";
 				const unsubscribe = session.subscribe((event) => {
 					if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
@@ -2103,19 +1900,19 @@ export class PiDiscordDaemon {
 			}
 			return;
 		}
-		
+
 		// Normal followup logic
 		if (responders.length > 0 && !responders.includes(instanceTag)) return;
 
 		// Check for explicit mentions (name or patterns)
 		const content = message.content ?? "";
 		const mentionPatterns = config.mentionPatterns ?? [];
-		const isMentioned = mentionPatterns.some(pattern => {
+		const isMentioned = mentionPatterns.some((pattern) => {
 			try {
 				// Support /pattern/i format
-				if (pattern.startsWith('/') && pattern.endsWith('/i')) {
+				if (pattern.startsWith("/") && pattern.endsWith("/i")) {
 					const regexStr = pattern.slice(1, -2);
-					return new RegExp(regexStr, 'i').test(content);
+					return new RegExp(regexStr, "i").test(content);
 				}
 				// Support plain strings
 				return content.toLowerCase().includes(pattern.toLowerCase());

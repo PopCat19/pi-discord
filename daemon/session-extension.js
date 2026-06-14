@@ -57,25 +57,18 @@ export function createRouteSessionExtension(runtime) {
 			name: "discord_upload",
 			label: "Discord Upload",
 			description: "Upload a local file to the active Discord route surface.",
-			promptSnippet:
-				"Upload route artifacts back to Discord when the user asked for a file.",
-			promptGuidelines: [
-				"Use this tool instead of assuming local files are automatically sent to Discord.",
-			],
+			promptSnippet: "Upload route artifacts back to Discord when the user asked for a file.",
+			promptGuidelines: ["Use this tool instead of assuming local files are automatically sent to Discord."],
 			parameters: Type.Object({
 				path: Type.String({ description: "Local file path to upload" }),
-				title: Type.Optional(
-					Type.String({ description: "Optional message title" }),
-				),
+				title: Type.Optional(Type.String({ description: "Optional message title" })),
 			}),
 			async execute(_toolCallId, params) {
 				const result = await runtime.uploadFile(params.path, {
 					title: params.title,
 				});
 				return {
-					content: [
-						{ type: "text", text: `Uploaded ${params.path} to Discord.` },
-					],
+					content: [{ type: "text", text: `Uploaded ${params.path} to Discord.` }],
 					details: result,
 				};
 			},
@@ -88,8 +81,7 @@ export function createRouteSessionExtension(runtime) {
 			promptSnippet: "React to messages with emoji when it feels natural.",
 			parameters: Type.Object({
 				emoji: Type.String({
-					description:
-						"Emoji to react with (e.g. 🔥, 👍, 😂, or custom name:id / <:name:id>)",
+					description: "Emoji to react with (e.g. 🔥, 👍, 😂, or custom name:id / <:name:id>)",
 				}),
 			}),
 			async execute(_toolCallId, params) {

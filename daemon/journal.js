@@ -26,9 +26,7 @@ export class JournalStore {
 						return [];
 					}
 				});
-			this.sourceIds = new Set(
-				this.entries.map((entry) => entry.sourceId).filter(Boolean),
-			);
+			this.sourceIds = new Set(this.entries.map((entry) => entry.sourceId).filter(Boolean));
 		} catch (error) {
 			if (error?.code !== "ENOENT") throw error;
 			this.entries = [];

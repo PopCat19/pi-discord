@@ -1,23 +1,26 @@
 {
-	"name": "pi-discord",
-	"private": false,
-	"version": "0.2.5",
-	"type": "module",
-	"bin": {
-		"pi-discord": "./bin/pi-discord.mjs",
-		"pi-discord-daemon": "./bin/pi-discord-daemon.mjs"
-	},
-	"scripts": {
-		"test": "node --test"
-	},
-	"pi": {
-		"extensions": [
-			"./index.js"
-		]
-	},
-	"dependencies": {
-		"@earendil-works/pi-coding-agent": "^0.75.3",
-		"@sinclair/typebox": "^0.34.41",
-		"discord.js": "^14.25.1"
-	}
+  "name": "pi-discord",
+  "private": false,
+  "version": "0.2.5",
+  "type": "module",
+  "bin": {
+    "pi-discord": "./bin/pi-discord.mjs",
+    "pi-discord-daemon": "./bin/pi-discord-daemon.mjs"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "bash ./scripts/lint.sh",
+    "lint:fix": "bash ./scripts/lint-fix.sh"
+  },
+  "pi": {
+    "extensions": ["./index.js"]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.9"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.3",
+    "@sinclair/typebox": "^0.34.41",
+    "discord.js": "^14.25.1"
+  }
 }

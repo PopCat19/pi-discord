@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const STATE_FILE = "presence-state.json";
@@ -68,7 +68,7 @@ export class PresenceManager {
 		this.state = this.loadState();
 		this.checkInterval = null;
 		this.refreshTimeout = null;
-		
+
 		// Dynamic presence state (overrides schedule)
 		this.dynamicMarker = null;
 		this.dynamicTimeout = null;
@@ -83,9 +83,9 @@ export class PresenceManager {
 		this.state.lastRefresh = new Date().toISOString();
 		await this.saveState();
 		await this.logger.info("presence-base-updated", {
-			markers: schedule.map(m => m.name),
+			markers: schedule.map((m) => m.name),
 		});
-		
+
 		// Apply current marker
 		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
 		await this.updatePresence(marker);
@@ -100,25 +100,25 @@ export class PresenceManager {
 	async setActivity(name, { ttl = 60000 } = {}) {
 		const activities = this.config.activities ?? DEFAULT_ACTIVITIES;
 		const activity = activities[name];
-		
+
 		if (!activity) {
 			await this.logger.warn("presence-activity-not-found", { name });
 			return;
 		}
-		
+
 		if (this.dynamicTimeout) {
 			clearTimeout(this.dynamicTimeout);
 		}
-		
+
 		this.dynamicMarker = { name, ...activity };
 		await this.updatePresence(this.dynamicMarker);
-		
+
 		// Auto-clear after TTL
 		this.dynamicTimeout = setTimeout(() => {
 			this.clear().catch(() => {});
 		}, ttl);
 	}
-	
+
 	/**
 	 * Clear dynamic presence, return to schedule.
 	 */
@@ -127,13 +127,11 @@ export class PresenceManager {
 			clearTimeout(this.dynamicTimeout);
 			this.dynamicTimeout = null;
 		}
-		
+
 		this.dynamicMarker = null;
-		
+
 		// Apply current schedule marker
-		const schedule = this.state.schedule.length > 0
-			? this.state.schedule
-			: this.generateSchedule();
+		const schedule = this.state.schedule.length > 0 ? this.state.schedule : this.generateSchedule();
 		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
 		await this.updatePresence(marker);
 	}
@@ -155,10 +153,7 @@ export class PresenceManager {
 
 	async saveState() {
 		try {
-			writeFileSync(
-				path.join(this.workspaceDir, STATE_FILE),
-				JSON.stringify(this.state, null, "\t")
-			);
+			writeFileSync(path.join(this.workspaceDir, STATE_FILE), JSON.stringify(this.state, null, "\t"));
 		} catch (err) {
 			await this.logger.error("presence-state-save-failed", { error: String(err) });
 		}
@@ -190,7 +185,7 @@ export class PresenceManager {
 	needsRefresh() {
 		const timezone = this.config.timezone ?? "America/New_York";
 		const lastRefresh = new Date(this.state.lastRefresh);
-		
+
 		// Get date in timezone
 		const nowInTz = new Date(new Date().toLocaleString("en-US", { timeZone: timezone }));
 		const lastInTz = new Date(lastRefresh.toLocaleString("en-US", { timeZone: timezone }));
@@ -207,7 +202,7 @@ export class PresenceManager {
 		const sorted = [...schedule].sort((a, b) => {
 			const [aH, aM] = a.time.split(":").map(Number);
 			const [bH, bM] = b.time.split(":").map(Number);
-			return (aH * 60 + aM) - (bH * 60 + bM);
+			return aH * 60 + aM - (bH * 60 + bM);
 		});
 
 		// Find most recent passed marker
@@ -256,7 +251,7 @@ export class PresenceManager {
 				marker: marker.name ?? "dynamic",
 				status,
 				activity: marker.activity,
-		});
+			});
 		} catch (err) {
 			await this.logger.error("presence-update-failed", { error: String(err) });
 		}
@@ -273,10 +268,8 @@ export class PresenceManager {
 			await this.updatePresence(this.dynamicMarker);
 			return;
 		}
-		
-		const schedule = this.state.schedule.length > 0
-			? this.state.schedule
-			: this.generateSchedule();
+
+		const schedule = this.state.schedule.length > 0 ? this.state.schedule : this.generateSchedule();
 		const marker = this.findMarkerForTime(schedule, this.getCurrentMinutes());
 		await this.updatePresence(marker);
 	}
@@ -284,7 +277,7 @@ export class PresenceManager {
 	async checkAndUpdatePresence() {
 		// Skip if dynamic presence is active
 		if (this.dynamicMarker) return;
-		
+
 		// Refresh schedule if new day - delegate to orchestrator if available
 		if (this.needsRefresh()) {
 			if (this.onDayRefresh) {
@@ -299,9 +292,7 @@ export class PresenceManager {
 			}
 		}
 
-		const schedule = this.state.schedule.length > 0
-			? this.state.schedule
-			: this.generateSchedule();
+		const schedule = this.state.schedule.length > 0 ? this.state.schedule : this.generateSchedule();
 
 		const currentMinutes = this.getCurrentMinutes();
 		const marker = this.findMarkerForTime(schedule, currentMinutes);
@@ -317,15 +308,11 @@ export class PresenceManager {
 	 */
 	start() {
 		// Force initial presence update (always apply to Discord)
-		this.applyCurrentPresence().catch(err =>
-			this.logger.error("presence-initial-update-failed", { error: String(err) })
-		);
+		this.applyCurrentPresence().catch((err) => this.logger.error("presence-initial-update-failed", { error: String(err) }));
 
 		// Check every minute
 		this.checkInterval = setInterval(() => {
-			this.checkAndUpdatePresence().catch(err =>
-				this.logger.error("presence-check-failed", { error: String(err) })
-			);
+			this.checkAndUpdatePresence().catch((err) => this.logger.error("presence-check-failed", { error: String(err) }));
 		}, 60000);
 
 		// Schedule next day's refresh at 00:00 timezone
@@ -345,12 +332,8 @@ export class PresenceManager {
 		tomorrow.setHours(0, 0, 0, 0);
 
 		// Convert to local time
-		const midnightInTz = new Date(
-			tomorrow.toLocaleString("en-US", { timeZone: timezone })
-		);
-		const localMidnight = new Date(
-			tomorrow.toLocaleString("en-US", { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
-		);
+		const midnightInTz = new Date(tomorrow.toLocaleString("en-US", { timeZone: timezone }));
+		const localMidnight = new Date(tomorrow.toLocaleString("en-US", { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
 
 		const delay = localMidnight.getTime() - now.getTime();
 

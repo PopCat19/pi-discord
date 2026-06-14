@@ -1,22 +1,11 @@
 /** @typedef {import("@earendil-works/pi-coding-agent").ExtensionAPI} ExtensionAPI */
 
 import { readFile } from "node:fs/promises";
-import {
-	createDefaultConfig,
-	loadConfig,
-	normalizeConfig,
-	saveConfig,
-	validateConfig,
-} from "./lib/config.js";
+import { createDefaultConfig, loadConfig, normalizeConfig, saveConfig, validateConfig } from "./lib/config.js";
 import { syncSlashCommands } from "./lib/discord-commands.js";
 import { pathExists } from "./lib/fs.js";
 import { getPaths } from "./lib/paths.js";
-import {
-	readDaemonLogs,
-	readDaemonStatus,
-	startDaemon,
-	stopDaemon,
-} from "./lib/supervisor.js";
+import { readDaemonLogs, readDaemonStatus, startDaemon, stopDaemon } from "./lib/supervisor.js";
 
 function sendText(pi, text) {
 	pi.sendMessage({ customType: "pi-discord", content: text, display: true });
@@ -39,10 +28,7 @@ function helpText(paths) {
 }
 
 function parseSubcommand(input) {
-	const [subcommand = "help", ...rest] = input
-		.trim()
-		.split(/\s+/)
-		.filter(Boolean);
+	const [subcommand = "help", ...rest] = input.trim().split(/\s+/).filter(Boolean);
 	return { subcommand, args: rest };
 }
 
@@ -87,8 +73,7 @@ async function getEditableConfigText(paths) {
 /** @param {ExtensionAPI} pi */
 export default function (pi) {
 	pi.registerCommand("discord", {
-		description:
-			"Manage the pi Discord bridge: /discord setup|start|stop|status|logs|sync-commands|open-config",
+		description: "Manage the pi Discord bridge: /discord setup|start|stop|status|logs|sync-commands|open-config",
 		handler: async (input, ctx) => {
 			const paths = getPaths();
 			const { subcommand, args } = parseSubcommand(input);
@@ -100,10 +85,7 @@ export default function (pi) {
 
 			if (subcommand === "setup") {
 				if (!ctx.hasUI) {
-					sendText(
-						pi,
-						`Interactive setup requires Pi UI. Edit ${paths.configPath} directly or run /discord open-config in interactive mode.`,
-					);
+					sendText(pi, `Interactive setup requires Pi UI. Edit ${paths.configPath} directly or run /discord open-config in interactive mode.`);
 					return;
 				}
 				let config;
@@ -113,18 +95,9 @@ export default function (pi) {
 					sendText(pi, `Could not read ${paths.configPath}: ${String(error)}`);
 					return;
 				}
-				const token = await ctx.ui.input(
-					"Discord bot token",
-					config.botToken || "",
-				);
-				const applicationId = await ctx.ui.input(
-					"Discord application id",
-					config.applicationId || "",
-				);
-				const guilds = await ctx.ui.input(
-					"Allowlisted guild ids (comma separated, blank for all)",
-					config.allowedGuildIds.join(","),
-				);
+				const token = await ctx.ui.input("Discord bot token", config.botToken || "");
+				const applicationId = await ctx.ui.input("Discord application id", config.applicationId || "");
+				const guilds = await ctx.ui.input("Allowlisted guild ids (comma separated, blank for all)", config.allowedGuildIds.join(","));
 
 				if (token == null && applicationId == null && guilds == null) {
 					return;
@@ -149,9 +122,7 @@ export default function (pi) {
 				if (validation.errors.length > 0) {
 					text += `\n\nValidation errors:\n- ${validation.errors.join("\n- ")}`;
 				} else if (nextConfig.syncCommandsOnStart) {
-					const canSync =
-						nextConfig.registerCommandsGlobally ||
-						nextConfig.allowedGuildIds.length > 0;
+					const canSync = nextConfig.registerCommandsGlobally || nextConfig.allowedGuildIds.length > 0;
 					if (canSync) {
 						try {
 							const syncResult = await syncSlashCommands(nextConfig);
@@ -169,10 +140,7 @@ export default function (pi) {
 
 			if (subcommand === "open-config") {
 				if (!ctx.hasUI) {
-					sendText(
-						pi,
-						`Open ${paths.configPath} in an editor and run /discord start when ready.`,
-					);
+					sendText(pi, `Open ${paths.configPath} in an editor and run /discord start when ready.`);
 					return;
 				}
 				let editableConfigText;
@@ -182,10 +150,7 @@ export default function (pi) {
 					sendText(pi, `Could not read ${paths.configPath}: ${String(error)}`);
 					return;
 				}
-				const edited = await ctx.ui.editor(
-					"Edit pi-discord config",
-					editableConfigText,
-				);
+				const edited = await ctx.ui.editor("Edit pi-discord config", editableConfigText);
 				if (edited == null) return;
 				try {
 					const parsed = normalizeConfig(paths, JSON.parse(edited));
@@ -206,10 +171,7 @@ export default function (pi) {
 			if (subcommand === "sync-commands") {
 				const loaded = await tryLoadConfig(paths);
 				if (loaded.error) {
-					sendText(
-						pi,
-						`Could not read ${paths.configPath}: ${loaded.error}\n\nRun /discord open-config to repair it.`,
-					);
+					sendText(pi, `Could not read ${paths.configPath}: ${loaded.error}\n\nRun /discord open-config to repair it.`);
 					return;
 				}
 				const validation = validateConfig(loaded.config);
@@ -219,10 +181,7 @@ export default function (pi) {
 				}
 				try {
 					const result = await syncSlashCommands(loaded.config);
-					sendText(
-						pi,
-						`Synced ${result.count} slash command(s) to ${result.scope} scope.`,
-					);
+					sendText(pi, `Synced ${result.count} slash command(s) to ${result.scope} scope.`);
 				} catch (error) {
 					sendText(pi, `Slash command sync failed: ${String(error)}`);
 				}
@@ -232,10 +191,7 @@ export default function (pi) {
 			if (subcommand === "start") {
 				const loaded = await tryLoadConfig(paths);
 				if (loaded.error) {
-					sendText(
-						pi,
-						`Could not read ${paths.configPath}: ${loaded.error}\n\nRun /discord open-config to repair it.`,
-					);
+					sendText(pi, `Could not read ${paths.configPath}: ${loaded.error}\n\nRun /discord open-config to repair it.`);
 					return;
 				}
 				const validation = validateConfig(loaded.config);
@@ -244,9 +200,7 @@ export default function (pi) {
 					return;
 				}
 				if (loaded.config.syncCommandsOnStart) {
-					const canSync =
-						loaded.config.registerCommandsGlobally ||
-						loaded.config.allowedGuildIds.length > 0;
+					const canSync = loaded.config.registerCommandsGlobally || loaded.config.allowedGuildIds.length > 0;
 					if (canSync) {
 						try {
 							await syncSlashCommands(loaded.config);
@@ -257,58 +211,34 @@ export default function (pi) {
 					}
 				}
 				const result = await startDaemon(paths);
-				sendText(
-					pi,
-					result.started
-						? `Started pi-discord daemon as pid ${result.pid}.\nWorkspace: ${paths.workspaceDir}`
-						: result.reason,
-				);
+				sendText(pi, result.started ? `Started pi-discord daemon as pid ${result.pid}.\nWorkspace: ${paths.workspaceDir}` : result.reason);
 				return;
 			}
 
 			if (subcommand === "stop") {
 				const result = await stopDaemon(paths);
-				sendText(
-					pi,
-					result.stopped
-						? `Stopped pi-discord daemon pid ${result.pid}.`
-						: result.reason,
-				);
+				sendText(pi, result.stopped ? `Stopped pi-discord daemon pid ${result.pid}.` : result.reason);
 				return;
 			}
 
 			if (subcommand === "status") {
 				const daemon = await readDaemonStatus(paths);
 				const configExists = await pathExists(paths.configPath);
-				const loaded = configExists
-					? await tryLoadConfig(paths)
-					: { config: createDefaultConfig(paths) };
-				const validation = loaded.config
-					? validateConfig(loaded.config)
-					: { errors: [], warnings: [] };
+				const loaded = configExists ? await tryLoadConfig(paths) : { config: createDefaultConfig(paths) };
+				const validation = loaded.config ? validateConfig(loaded.config) : { errors: [], warnings: [] };
 				const statusText = [
 					`Running: ${daemon.running ? "yes" : "no"}`,
 					daemon.pid ? `PID: ${daemon.pid}` : undefined,
 					daemon.status?.phase ? `Phase: ${daemon.status.phase}` : undefined,
-					daemon.status?.userTag
-						? `Bot user: ${daemon.status.userTag}`
-						: undefined,
-					daemon.status?.routeCount !== undefined
-						? `Known routes: ${daemon.status.routeCount}`
-						: undefined,
-					daemon.status?.activeRuns?.length
-						? `Active runs: ${daemon.status.activeRuns.join(", ")}`
-						: undefined,
+					daemon.status?.userTag ? `Bot user: ${daemon.status.userTag}` : undefined,
+					daemon.status?.routeCount !== undefined ? `Known routes: ${daemon.status.routeCount}` : undefined,
+					daemon.status?.activeRuns?.length ? `Active runs: ${daemon.status.activeRuns.join(", ")}` : undefined,
 					`Config: ${paths.configPath}`,
 					`Workspace: ${paths.workspaceDir}`,
 					`Log: ${paths.daemonLogPath}`,
 					loaded.error ? `Config read error: ${loaded.error}` : undefined,
-					validation.errors.length
-						? `Config errors: ${validation.errors.join("; ")}`
-						: undefined,
-					validation.warnings.length
-						? `Config warnings: ${validation.warnings.join("; ")}`
-						: undefined,
+					validation.errors.length ? `Config errors: ${validation.errors.join("; ")}` : undefined,
+					validation.warnings.length ? `Config warnings: ${validation.warnings.join("; ")}` : undefined,
 				]
 					.filter(Boolean)
 					.join("\n");
@@ -318,17 +248,9 @@ export default function (pi) {
 
 			if (subcommand === "logs") {
 				const requestedLines = Number(args[0] ?? "80");
-				const lineCount =
-					Number.isInteger(requestedLines) && requestedLines > 0
-						? Math.min(requestedLines, 500)
-						: 80;
+				const lineCount = Number.isInteger(requestedLines) && requestedLines > 0 ? Math.min(requestedLines, 500) : 80;
 				const logs = await readDaemonLogs(paths, lineCount);
-				sendText(
-					pi,
-					logs
-						? `Last log lines from ${paths.daemonLogPath}:\n\n${logs}`
-						: `No daemon logs yet at ${paths.daemonLogPath}`,
-				);
+				sendText(pi, logs ? `Last log lines from ${paths.daemonLogPath}:\n\n${logs}` : `No daemon logs yet at ${paths.daemonLogPath}`);
 				return;
 			}
 

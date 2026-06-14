@@ -1,10 +1,5 @@
 import { readFile } from "node:fs/promises";
-import {
-	MAX_CONTEXT_CHARS,
-	MAX_CONTEXT_LINES,
-	DEFAULT_CONTEXT_CHARS,
-	DEFAULT_CONTEXT_LINES,
-} from "../lib/constants.js";
+import { DEFAULT_CONTEXT_CHARS, DEFAULT_CONTEXT_LINES, MAX_CONTEXT_CHARS, MAX_CONTEXT_LINES } from "../lib/constants.js";
 
 /**
  * @param {{
@@ -27,15 +22,11 @@ export function buildPromptText(input) {
 	];
 
 	if (input.scope.threadId) sections.push(`Thread: ${input.scope.threadId}`);
-	if (input.replyContext)
-		sections.push(`Reply context:\n${input.replyContext}`);
+	if (input.replyContext) sections.push(`Reply context:\n${input.replyContext}`);
 	if (input.savedAttachments.length > 0) {
 		sections.push(
 			`Saved attachments:\n${input.savedAttachments
-				.map(
-					(attachment) =>
-						`- ${attachment.name} -> ${attachment.path}${attachment.contentType ? ` (${attachment.contentType})` : ""}`,
-				)
+				.map((attachment) => `- ${attachment.name} -> ${attachment.path}${attachment.contentType ? ` (${attachment.contentType})` : ""}`)
 				.join("\n")}`,
 		);
 	}
@@ -48,14 +39,8 @@ export function buildPromptText(input) {
  */
 export async function buildInjectedContext(input) {
 	// Apply configurable limits with upper bound guards
-	const maxLines = Math.min(
-		input.contextLimits?.lines ?? DEFAULT_CONTEXT_LINES,
-		MAX_CONTEXT_LINES,
-	);
-	const maxChars = Math.min(
-		input.contextLimits?.chars ?? DEFAULT_CONTEXT_CHARS,
-		MAX_CONTEXT_CHARS,
-	);
+	const maxLines = Math.min(input.contextLimits?.lines ?? DEFAULT_CONTEXT_LINES, MAX_CONTEXT_LINES);
+	const maxChars = Math.min(input.contextLimits?.chars ?? DEFAULT_CONTEXT_CHARS, MAX_CONTEXT_CHARS);
 
 	let memoryText = "";
 
@@ -73,11 +58,7 @@ export async function buildInjectedContext(input) {
 	const recentMessages = input.journal
 		.recent(
 			maxLines,
-			(entry) =>
-				(entry.kind === "ambient" ||
-					entry.kind === "inbound" ||
-					entry.kind === "reaction") &&
-				entry.sourceId !== input.excludeSourceId,
+			(entry) => (entry.kind === "ambient" || entry.kind === "inbound" || entry.kind === "reaction") && entry.sourceId !== input.excludeSourceId,
 		)
 		.map((entry) => {
 			if (entry.kind === "reaction") {
@@ -89,14 +70,10 @@ export async function buildInjectedContext(input) {
 
 	const blocks = [];
 	if (memoryText.trim()) {
-		blocks.push(
-			`Route memory:\n${memoryText.trim().slice(0, maxChars)}`,
-		);
+		blocks.push(`Route memory:\n${memoryText.trim().slice(0, maxChars)}`);
 	}
 	if (recentMessages.trim()) {
-		blocks.push(
-			`Recent Discord context:\n${recentMessages.slice(0, maxChars)}`,
-		);
+		blocks.push(`Recent Discord context:\n${recentMessages.slice(0, maxChars)}`);
 	}
 	return blocks.join("\n\n");
 }

@@ -1,13 +1,6 @@
 import { basename } from "node:path";
-import {
-	ActionRowBuilder,
-	AttachmentBuilder,
-	ButtonBuilder,
-	ButtonStyle,
-	ChannelType,
-} from "discord.js";
+import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelType } from "discord.js";
 import { DISCORD_MESSAGE_LIMIT } from "../lib/constants.js";
-
 
 export function splitDiscordText(text) {
 	if (!text) return ["(no assistant output)"];
@@ -57,8 +50,7 @@ export class DiscordRenderer {
 	}
 
 	async getTargetChannel() {
-		const targetId =
-			this.manifest.scope.threadId ?? this.manifest.scope.channelId;
+		const targetId = this.manifest.scope.threadId ?? this.manifest.scope.channelId;
 		const channel = await this.client.channels.fetch(targetId);
 		if (!channel || !("send" in channel)) {
 			throw new Error(`Discord channel ${targetId} is not writable.`);
@@ -72,7 +64,7 @@ export class DiscordRenderer {
 
 	async ensurePrimaryMessage(fallbackText = "Working...", ephemeral = false, statusMessageId = null) {
 		const channel = await this.getTargetChannel();
-		
+
 		// If we have a status message to take over
 		if (statusMessageId && "messages" in channel && !this.manifest.primaryMessageId) {
 			try {
@@ -88,9 +80,7 @@ export class DiscordRenderer {
 
 		if (this.manifest.primaryMessageId && "messages" in channel) {
 			try {
-				const existing = await channel.messages.fetch(
-					this.manifest.primaryMessageId,
-				);
+				const existing = await channel.messages.fetch(this.manifest.primaryMessageId);
 				return existing;
 			} catch {
 				this.manifest.primaryMessageId = undefined;
@@ -166,9 +156,7 @@ export class DiscordRenderer {
 		}
 
 		try {
-			const channel = await this.client.channels.fetch(
-				this.manifest.detailsThreadId,
-			);
+			const channel = await this.client.channels.fetch(this.manifest.detailsThreadId);
 			return channel && "send" in channel ? channel : undefined;
 		} catch {
 			this.manifest.detailsThreadId = undefined;
@@ -218,9 +206,7 @@ export class DiscordRenderer {
 		const thread = await this.ensureDetailsThread();
 		if (thread && "send" in thread) {
 			try {
-				const message = await thread.send(
-					this.createUploadPayload(filePath, options),
-				);
+				const message = await thread.send(this.createUploadPayload(filePath, options));
 				return {
 					messageId: message.id,
 					url: message.attachments.first()?.url,
@@ -231,9 +217,7 @@ export class DiscordRenderer {
 		}
 
 		const channel = await this.getTargetChannel();
-		const message = await channel.send(
-			this.createUploadPayload(filePath, options),
-		);
+		const message = await channel.send(this.createUploadPayload(filePath, options));
 		return {
 			messageId: message.id,
 			url: message.attachments.first()?.url,
@@ -241,10 +225,7 @@ export class DiscordRenderer {
 	}
 
 	handleSessionEvent(event) {
-		if (
-			event.type === "message_update" &&
-			event.assistantMessageEvent.type === "text_delta"
-		) {
+		if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 			this.currentAssistantText += event.assistantMessageEvent.delta;
 			this.schedulePrimaryFlush();
 		}
@@ -255,17 +236,13 @@ export class DiscordRenderer {
 		}
 		if (event.type === "tool_execution_end") {
 			this.runInBackground("tool-detail-post-failed", async () => {
-				await this.postDetail(
-					`Tool finished: ${event.toolName}${event.isError ? " (error)" : ""}`,
-				);
+				await this.postDetail(`Tool finished: ${event.toolName}${event.isError ? " (error)" : ""}`);
 			});
 		}
 	}
 
 	async renderQueued(item) {
-		await this.updatePrimary(
-			`Queued for <@${item.source.userId}>\n\n${item.payload.rawText || "(empty message)"}`,
-		);
+		await this.updatePrimary(`Queued for <@${item.source.userId}>\n\n${item.payload.rawText || "(empty message)"}`);
 	}
 
 	async renderRunning(item) {
@@ -273,17 +250,15 @@ export class DiscordRenderer {
 		const statusMessageId = item.source.statusMessageId;
 		const hasStatusMsg = !!statusMessageId;
 		const showPrompt = item.source.showPrompt !== false;
-		
+
 		// When showThinkingStatus is false, skip progress message entirely
 		// The final response will be sent directly in processQueueItem
 		if (!showPrompt) {
 			return;
 		}
-		
-		const prefix = (isEphemeralTrigger && !hasStatusMsg) ? "*Thinking...*\n\n" : `Working for <@${item.source.userId}>\n\n`;
-		const content = hasStatusMsg 
-			? (item.payload.rawText || "(empty message)") 
-			: `${prefix}${item.payload.rawText || "(empty message)"}`;
+
+		const prefix = isEphemeralTrigger && !hasStatusMsg ? "*Thinking...*\n\n" : `Working for <@${item.source.userId}>\n\n`;
+		const content = hasStatusMsg ? item.payload.rawText || "(empty message)" : `${prefix}${item.payload.rawText || "(empty message)"}`;
 
 		await this.updatePrimary(content, { statusMessageId });
 	}

@@ -17,8 +17,7 @@ import { getRoutePaths } from "../lib/paths.js";
  */
 
 function normalizeScope(value) {
-	if (!value || typeof value !== "object" || Array.isArray(value))
-		return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	if (typeof value.channelId !== "string" || !value.channelId) return undefined;
 	return {
 		guildId: typeof value.guildId === "string" ? value.guildId : null,
@@ -34,20 +33,13 @@ function normalizeRegistry(value) {
 
 	const routes = {};
 	const sourceRoutes = value.routes;
-	if (
-		!sourceRoutes ||
-		typeof sourceRoutes !== "object" ||
-		Array.isArray(sourceRoutes)
-	) {
+	if (!sourceRoutes || typeof sourceRoutes !== "object" || Array.isArray(sourceRoutes)) {
 		return { version: 1, routes };
 	}
 
 	for (const [key, entry] of Object.entries(sourceRoutes)) {
 		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-		const routeKey =
-			typeof entry.routeKey === "string" && entry.routeKey
-				? entry.routeKey
-				: key;
+		const routeKey = typeof entry.routeKey === "string" && entry.routeKey ? entry.routeKey : key;
 		const scope = normalizeScope(entry.scope);
 		if (!routeKey || !scope) continue;
 		routes[routeKey] = { routeKey, scope };
@@ -59,14 +51,8 @@ function normalizeRegistry(value) {
 function normalizeManifest(routeKey, value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const scope = normalizeScope(value.scope);
-	const executionRoot =
-		typeof value.executionRoot === "string" && value.executionRoot
-			? value.executionRoot
-			: undefined;
-	const memoryPath =
-		typeof value.memoryPath === "string" && value.memoryPath
-			? value.memoryPath
-			: undefined;
+	const executionRoot = typeof value.executionRoot === "string" && value.executionRoot ? value.executionRoot : undefined;
+	const memoryPath = typeof value.memoryPath === "string" && value.memoryPath ? value.memoryPath : undefined;
 	if (!scope || !executionRoot || !memoryPath) return null;
 
 	return {
@@ -76,18 +62,10 @@ function normalizeManifest(routeKey, value) {
 		workspaceMode: value.workspaceMode === "shared" ? "shared" : "dedicated",
 		executionRoot,
 		memoryPath,
-		sessionFile:
-			typeof value.sessionFile === "string" ? value.sessionFile : undefined,
-		primaryMessageId:
-			typeof value.primaryMessageId === "string"
-				? value.primaryMessageId
-				: undefined,
-		detailsThreadId:
-			typeof value.detailsThreadId === "string"
-				? value.detailsThreadId
-				: undefined,
-		currentAgent:
-			typeof value.currentAgent === "string" ? value.currentAgent : undefined,
+		sessionFile: typeof value.sessionFile === "string" ? value.sessionFile : undefined,
+		primaryMessageId: typeof value.primaryMessageId === "string" ? value.primaryMessageId : undefined,
+		detailsThreadId: typeof value.detailsThreadId === "string" ? value.detailsThreadId : undefined,
+		currentAgent: typeof value.currentAgent === "string" ? value.currentAgent : undefined,
 	};
 }
 
@@ -101,9 +79,7 @@ export class RouteRegistry {
 	}
 
 	async load() {
-		this.registry = normalizeRegistry(
-			await readJson(this.paths.registryPath, { version: 1, routes: {} }),
-		);
+		this.registry = normalizeRegistry(await readJson(this.paths.registryPath, { version: 1, routes: {} }));
 		return this.registry;
 	}
 
@@ -121,10 +97,7 @@ export class RouteRegistry {
 	 */
 	async loadManifest(routeKey) {
 		const routePaths = getRoutePaths(this.paths, routeKey);
-		return normalizeManifest(
-			routeKey,
-			await readJson(routePaths.manifestPath, null),
-		);
+		return normalizeManifest(routeKey, await readJson(routePaths.manifestPath, null));
 	}
 
 	/**
