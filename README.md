@@ -60,7 +60,7 @@ Requires a bot token and application id from the Discord Developer Portal.
 - slash commands and @mention ingress
 - `discord_upload` tool for posting files back to Discord
 - `discord_react` tool for adding emoji reactions to messages
-- emoji reaction awareness — user reactions appear as passive context on the bot's next turn
+- emoji reaction awareness, user reactions appear as passive context on the bot's next turn
 - throttled message updates with details-thread fallback
 - DM allowlisting and admin controls for stop/reset
 
@@ -111,7 +111,7 @@ pi-discord halt <name>         Stop all runs and clear queue (admin)
 1. Create Discord application at https://discord.com/developers/applications
 2. Copy bot token and application ID
 3. `pi-discord create my-bot`
-4. `pi-discord edit my-bot` — paste credentials
+4. `pi-discord edit my-bot`, paste credentials
 5. Add `systemPromptFile: "system-prompt.md"` to config and create the file
 6. `pi-discord start my-bot`
 

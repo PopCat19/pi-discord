@@ -8,7 +8,7 @@
 
 ## [0.2.4] - 2026-03-24
 
-- **Display names**: use `displayName` instead of `username` in Requester lines and journal entries. The agent now sees "nicopreme" instead of "cartjacked." — matching what Discord shows in the UI. Falls back through server nickname → global display name → username.
+- **Display names**: use `displayName` instead of `username` in Requester lines and journal entries. The agent now sees "nicopreme" instead of "cartjacked.", matching what Discord shows in the UI. Falls back through server nickname → global display name → username.
 
 ## [0.2.3] - 2026-03-23
 

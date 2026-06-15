@@ -41,7 +41,7 @@ Requires a bot token and application id from the Discord Developer Portal.
 - slash commands and @mention ingress
 - `discord_upload` tool for posting files back to Discord
 - `discord_react` tool for adding emoji reactions to messages
-- emoji reaction awareness — user reactions appear as passive context on the bot's next turn
+- emoji reaction awareness, user reactions appear as passive context on the bot's next turn
 - throttled message updates with details-thread fallback
 - DM allowlisting and admin controls for stop/reset
 

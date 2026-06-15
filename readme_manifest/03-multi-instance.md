@@ -31,7 +31,7 @@ pi-discord halt <name>         Stop all runs and clear queue (admin)
 1. Create Discord application at https://discord.com/developers/applications
 2. Copy bot token and application ID
 3. `pi-discord create my-bot`
-4. `pi-discord edit my-bot` — paste credentials
+4. `pi-discord edit my-bot`, paste credentials
 5. Add `systemPromptFile: "system-prompt.md"` to config and create the file
 6. `pi-discord start my-bot`
 
